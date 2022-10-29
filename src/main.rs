@@ -83,8 +83,8 @@ pub struct SyncServer {
 
 impl SyncServer {
     pub fn new(our_port: u16, their_port: u16) -> anyhow::Result<Arc<Self>> {
-	let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port))?;
-	let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port))?;
+        let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
         let sync_server = Arc::new(SyncServer {
             listener,
             peer,
@@ -110,6 +110,14 @@ impl SyncServer {
                 // TODO: make this killable?
                 loop {
                     if let Err(e) = sync_server.push() {
+                        // TODO: this is so ugly...
+                        match e.downcast_ref::<std::io::Error>() {
+                            Some(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                                continue;
+                            }
+                            Some(_) => {}
+                            None => {}
+                        }
                         teprintln!("PUSH error: {}", e);
                     }
                     thread::sleep(Duration::from_millis(100));
