@@ -151,15 +151,9 @@ pub struct SyncServer {
 }
 
 impl SyncServer {
-    pub fn new() -> anyhow::Result<Arc<Self>> {
-        let listener = TcpListener::bind("127.0.0.1:0")?;
-        teprintln!("Listening on {}...", listener.local_addr()?);
-
-        let mut raw_peer = String::new();
-        let mut stdin = BufReader::new(std::io::stdin());
-        stdin.read_line(&mut raw_peer)?;
-        let peer = SocketAddr::from_str(raw_peer.trim())?;
-
+    pub fn new(our_port: u16, their_port: u16) -> anyhow::Result<Arc<Self>> {
+	let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port))?;
+	let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
         let sync_server = Arc::new(SyncServer {
             listener,
             peer,
@@ -232,7 +226,11 @@ impl SyncServer {
 // 3. make a user interface that lets people modify the content
 //    inside of the automerge document
 fn main() -> anyhow::Result<()> {
-    let sync_server = SyncServer::new()?;
+    let args: Vec<String> = std::env::args().into_iter().collect();
+    let our_port = u16::from_str(&args[1])?;
+    let their_port = u16::from_str(&args[2])?;
+
+    let sync_server = SyncServer::new(our_port, their_port)?;
     let mut stdin = BufReader::new(std::io::stdin());
     loop {
         let mut line = String::new();
