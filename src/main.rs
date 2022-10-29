@@ -1,8 +1,8 @@
 use std::io::BufRead;
 use std::io::BufReader;
+use std::io::BufWriter;
 use std::io::Read;
 use std::io::Write;
-use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::sync::Mutex;
@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use lazy_static::lazy_static;
 
-const SPECIAL_SAUCE: &'static str = "TaRsK";
+const SPECIAL_SAUCE: &'static str = "TaRsK\n";
 
 // logging! :)
 lazy_static! {
@@ -52,17 +52,21 @@ fn handle_connections() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_stream(stream: TcpStream) -> anyhow::Result<()> {
+fn handle_stream(mut stream: TcpStream) -> anyhow::Result<()> {
     let addr = stream.peer_addr()?;
     teprintln!("Handling {}...", addr);
 
-    let mut buf = BufReader::new(stream);
+    let mut reader = BufReader::new(stream.try_clone()?);
     let mut line = String::new();
-    while let Ok(read_size) = buf.read_line(&mut line) {
+    while let Ok(read_size) = reader.read_line(&mut line) {
         if read_size == 0 {
             break;
         }
-        print!("{}", line);
+
+	if line == SPECIAL_SAUCE {
+	    stream.write_all(SPECIAL_SAUCE.as_bytes())?;
+	}
+
         line.clear();
     }
 
@@ -88,15 +92,16 @@ fn connect_to_peers() -> anyhow::Result<()> {
             continue;
         }
 
-        let mut buf: [u8; 5] = [0; 5];
-	if let Err(_) = stream.read_exact(&mut buf) {
-	    continue;
-	}
-
-        if buf != SPECIAL_SAUCE.as_bytes() {
+        let mut buf: [u8; 6] = [0; 6];
+        if let Err(_) = stream.read_exact(&mut buf) {
             continue;
         }
-	peers.push(stream.peer_addr()?);
+
+        if buf != SPECIAL_SAUCE.as_bytes() {
+	    println!("{:?} {:?}", buf, SPECIAL_SAUCE.as_bytes());
+            continue;
+        }
+        peers.push(stream.peer_addr()?);
     }
     teprintln!("{:?}", peers);
 
