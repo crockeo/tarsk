@@ -73,75 +73,6 @@ impl AutomergeNumber {
     }
 }
 
-#[cfg(test)]
-mod automerge_number_tests {
-    use super::*;
-
-    #[test]
-    fn test_get_number_empty() -> anyhow::Result<()> {
-        let number = AutomergeNumber::new();
-        assert_eq!(number.get_number()?, None);
-        Ok(())
-    }
-
-    #[test]
-    fn test_set_get_number() -> anyhow::Result<()> {
-        let mut number = AutomergeNumber::new();
-        number.set_number(1234)?;
-        assert_eq!(number.get_number()?, Some(1234));
-        Ok(())
-    }
-
-    #[test]
-    fn test_set_get_number_multiple() -> anyhow::Result<()> {
-        let mut number = AutomergeNumber::new();
-        number.set_number(1234)?;
-        number.set_number(5678)?;
-        assert_eq!(number.get_number()?, Some(5678));
-        Ok(())
-    }
-
-    #[test]
-    fn test_sync() -> anyhow::Result<()> {
-        let mut num1 = AutomergeNumber::new();
-        let mut num2 = AutomergeNumber::new();
-
-        num1.set_number(1234)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, None);
-
-        num2.merge(&mut num1)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, Some(1234));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_sync_multiple() -> anyhow::Result<()> {
-        let mut num1 = AutomergeNumber::new();
-        let mut num2 = AutomergeNumber::new();
-        let mut num3 = AutomergeNumber::new();
-
-        num1.set_number(1234)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, None);
-        assert_eq!(num3.get_number()?, None);
-
-        num2.merge(&mut num1)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, Some(1234));
-        assert_eq!(num3.get_number()?, None);
-
-        num3.set_number(5678)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, Some(1234));
-        assert_eq!(num3.get_number()?, Some(5678));
-
-        Ok(())
-    }
-}
-
 // 2. make a peering server which periodically syncs up the content
 //    shared inside of the automerge implementation
 pub struct SyncServer {
@@ -240,5 +171,74 @@ fn main() -> anyhow::Result<()> {
             sync_server.set_number(num)?;
         }
         println!("Current value: {:?}", sync_server.get_number()?);
+    }
+}
+
+#[cfg(test)]
+mod automerge_number_tests {
+    use super::*;
+
+    #[test]
+    fn test_get_number_empty() -> anyhow::Result<()> {
+        let number = AutomergeNumber::new();
+        assert_eq!(number.get_number()?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_get_number() -> anyhow::Result<()> {
+        let mut number = AutomergeNumber::new();
+        number.set_number(1234)?;
+        assert_eq!(number.get_number()?, Some(1234));
+        Ok(())
+    }
+
+    #[test]
+    fn test_set_get_number_multiple() -> anyhow::Result<()> {
+        let mut number = AutomergeNumber::new();
+        number.set_number(1234)?;
+        number.set_number(5678)?;
+        assert_eq!(number.get_number()?, Some(5678));
+        Ok(())
+    }
+
+    #[test]
+    fn test_sync() -> anyhow::Result<()> {
+        let mut num1 = AutomergeNumber::new();
+        let mut num2 = AutomergeNumber::new();
+
+        num1.set_number(1234)?;
+        assert_eq!(num1.get_number()?, Some(1234));
+        assert_eq!(num2.get_number()?, None);
+
+        num2.merge(&mut num1)?;
+        assert_eq!(num1.get_number()?, Some(1234));
+        assert_eq!(num2.get_number()?, Some(1234));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_sync_multiple() -> anyhow::Result<()> {
+        let mut num1 = AutomergeNumber::new();
+        let mut num2 = AutomergeNumber::new();
+        let mut num3 = AutomergeNumber::new();
+
+        num1.set_number(1234)?;
+        assert_eq!(num1.get_number()?, Some(1234));
+        assert_eq!(num2.get_number()?, None);
+        assert_eq!(num3.get_number()?, None);
+
+        num2.merge(&mut num1)?;
+        assert_eq!(num1.get_number()?, Some(1234));
+        assert_eq!(num2.get_number()?, Some(1234));
+        assert_eq!(num3.get_number()?, None);
+
+        num3.set_number(5678)?;
+        assert_eq!(num1.get_number()?, Some(1234));
+        assert_eq!(num2.get_number()?, Some(1234));
+        assert_eq!(num3.get_number()?, Some(5678));
+
+        Ok(())
     }
 }
