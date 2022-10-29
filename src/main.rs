@@ -1,6 +1,5 @@
 use std::io::BufRead;
 use std::io::BufReader;
-use std::io::BufWriter;
 use std::io::Read;
 use std::io::Write;
 use std::net::TcpListener;
@@ -29,9 +28,18 @@ macro_rules! teprintln {
 }
 
 fn main() -> anyhow::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    teprintln!("Listening on {}...", listener.local_addr()?);
+
     let threads = vec![
-        thread::spawn(handle_connections),
-        thread::spawn(connect_to_peers),
+        thread::spawn({
+	    let listener = listener.try_clone()?;
+	    move || { handle_connections(listener) }
+	}),
+        thread::spawn({
+	    let listener = listener.try_clone()?;
+	    move || { connect_to_peers(listener) }
+	}),
     ];
     for thread in threads.into_iter() {
         _ = thread.join();
@@ -39,12 +47,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_connections() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    {
-        let _ = PRINT_LOCK.lock().unwrap();
-        teprintln!("Listening on {}...", listener.local_addr()?);
-    }
+fn handle_connections(listener: TcpListener) -> anyhow::Result<()> {
     for stream in listener.incoming() {
         let stream = stream?;
         thread::spawn(move || -> anyhow::Result<()> { handle_stream(stream) });
@@ -74,11 +77,17 @@ fn handle_stream(mut stream: TcpStream) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn connect_to_peers() -> anyhow::Result<()> {
+fn connect_to_peers(listener: TcpListener) -> anyhow::Result<()> {
+    let self_port = listener.local_addr()?.port();
+
     teprintln!("Connecting to peers...");
 
     let mut peers = vec![];
     for port in 1024..=u16::MAX {
+	if port == self_port {
+	    continue;
+	}
+
         let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", port)) {
             Err(_) => continue,
             Ok(stream) => stream,
@@ -98,7 +107,6 @@ fn connect_to_peers() -> anyhow::Result<()> {
         }
 
         if buf != SPECIAL_SAUCE.as_bytes() {
-	    println!("{:?} {:?}", buf, SPECIAL_SAUCE.as_bytes());
             continue;
         }
         peers.push(stream.peer_addr()?);
