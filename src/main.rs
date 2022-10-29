@@ -2,21 +2,32 @@ use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Read;
 use std::io::Write;
+use std::net::SocketAddr;
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::str::FromStr;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use automerge::transaction::Transactable;
+use lazy_static::lazy_static;
 
-// high-level idea for v0 concept
-//
-// 2. make a peering server which periodically syncs up the content
-//    shared inside of the automerge implementation
-//
-// 3. make a user interface that lets people modify the content
-//    inside of the automerge document
+// logging! :)
+lazy_static! {
+    static ref PRINT_LOCK: Mutex<()> = Mutex::new(());
+}
+
+macro_rules! teprintln {
+    () => {
+        $crate::eprint!("\n")
+    };
+    ($($arg:tt)*) => {{
+	let _ = PRINT_LOCK.lock().unwrap();
+	eprintln!($($arg)*);
+    }};
+}
 
 // 1. make an automerge document that has some kind of content in it
 //    see https://github.com/automerge/automerge-rs
@@ -127,120 +138,109 @@ mod automerge_number_tests {
         assert_eq!(num2.get_number()?, Some(1234));
         assert_eq!(num3.get_number()?, Some(5678));
 
-        num3.merge(&mut num1)?;
-        num1.merge(&mut num3)?;
-        assert_eq!(num1.get_number()?, Some(1234));
-        assert_eq!(num2.get_number()?, Some(1234));
-        assert_eq!(num3.get_number()?, Some(1234));
-
         Ok(())
     }
 }
 
-use lazy_static::lazy_static;
-
-const SPECIAL_SAUCE: &'static str = "TaRsK\n";
-
-// logging! :)
-lazy_static! {
-    static ref PRINT_LOCK: Mutex<()> = Mutex::new(());
+// 2. make a peering server which periodically syncs up the content
+//    shared inside of the automerge implementation
+pub struct SyncServer {
+    listener: TcpListener,
+    peer: SocketAddr,
+    number: Mutex<AutomergeNumber>,
 }
 
-macro_rules! teprintln {
-    () => {
-        $crate::eprint!("\n")
-    };
-    ($($arg:tt)*) => {{
-	let _ = PRINT_LOCK.lock().unwrap();
-	eprintln!($($arg)*);
-    }};
-}
+impl SyncServer {
+    pub fn new() -> anyhow::Result<Arc<Self>> {
+        let listener = TcpListener::bind("127.0.0.1:0")?;
+        teprintln!("Listening on {}...", listener.local_addr()?);
 
-fn main() -> anyhow::Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:0")?;
-    teprintln!("Listening on {}...", listener.local_addr()?);
+        let mut raw_peer = String::new();
+        let mut stdin = BufReader::new(std::io::stdin());
+        stdin.read_line(&mut raw_peer)?;
+        let peer = SocketAddr::from_str(raw_peer.trim())?;
 
-    let threads = vec![
-        thread::spawn({
-            let listener = listener.try_clone()?;
-            move || handle_connections(listener)
-        }),
-        thread::spawn({
-            let listener = listener.try_clone()?;
-            move || connect_to_peers(listener)
-        }),
-    ];
-    for thread in threads.into_iter() {
-        _ = thread.join();
-    }
-    Ok(())
-}
+        let sync_server = Arc::new(SyncServer {
+            listener,
+            peer,
+            number: Mutex::new(AutomergeNumber::new()),
+        });
 
-fn handle_connections(listener: TcpListener) -> anyhow::Result<()> {
-    for stream in listener.incoming() {
-        let stream = stream?;
-        thread::spawn(move || -> anyhow::Result<()> { handle_stream(stream) });
-    }
-    Ok(())
-}
-
-fn handle_stream(mut stream: TcpStream) -> anyhow::Result<()> {
-    let addr = stream.peer_addr()?;
-    teprintln!("Handling {}...", addr);
-
-    let mut reader = BufReader::new(stream.try_clone()?);
-    let mut line = String::new();
-    while let Ok(read_size) = reader.read_line(&mut line) {
-        if read_size == 0 {
-            break;
+        {
+            let sync_server = sync_server.clone();
+            thread::spawn(move || {
+                // TODO: make this killable?
+                loop {
+                    if let Err(e) = sync_server.pull() {
+                        teprintln!("PULL error: {}", e);
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+            });
         }
 
-        if line == SPECIAL_SAUCE {
-            stream.write_all(SPECIAL_SAUCE.as_bytes())?;
+        {
+            let sync_server = sync_server.clone();
+            thread::spawn(move || {
+                // TODO: make this killable?
+                loop {
+                    if let Err(e) = sync_server.push() {
+                        teprintln!("PUSH error: {}", e);
+                    }
+                    thread::sleep(Duration::from_millis(100));
+                }
+            });
         }
 
-        line.clear();
+        Ok(sync_server)
     }
 
-    teprintln!("Lost connection to {}...", addr);
-    Ok(())
-}
+    pub fn set_number(&self, number: i64) -> anyhow::Result<()> {
+        let mut doc = self.number.lock().unwrap();
+        doc.set_number(number)
+    }
 
-fn connect_to_peers(listener: TcpListener) -> anyhow::Result<()> {
-    let self_port = listener.local_addr()?.port();
+    pub fn get_number(&self) -> anyhow::Result<Option<i64>> {
+        let doc = self.number.lock().unwrap();
+        doc.get_number()
+    }
 
-    teprintln!("Connecting to peers...");
+    fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
+        let (mut stream, _) = self.listener.accept()?;
 
-    let mut peers = vec![];
-    for port in 1024..=u16::MAX {
-        if port == self_port {
-            continue;
-        }
+        let mut contents = vec![];
+        stream.read_to_end(&mut contents)?;
 
-        let mut stream = match TcpStream::connect(format!("127.0.0.1:{}", port)) {
-            Err(_) => continue,
-            Ok(stream) => stream,
+        let mut other_doc = AutomergeNumber::load(&contents)?;
+        let mut doc = self.number.lock().unwrap();
+        doc.merge(&mut other_doc)?;
+
+        Ok(())
+    }
+
+    fn push(self: &Arc<Self>) -> anyhow::Result<()> {
+        let mut stream = TcpStream::connect(self.peer)?;
+        let buf = {
+            let mut doc = self.number.lock().unwrap();
+            doc.save()
         };
-
-        let timeout = Some(Duration::from_millis(50));
-        stream.set_read_timeout(timeout)?;
-        stream.set_write_timeout(timeout)?;
-
-        if let Err(_) = stream.write_all(SPECIAL_SAUCE.as_bytes()) {
-            continue;
-        }
-
-        let mut buf: [u8; 6] = [0; 6];
-        if let Err(_) = stream.read_exact(&mut buf) {
-            continue;
-        }
-
-        if buf != SPECIAL_SAUCE.as_bytes() {
-            continue;
-        }
-        peers.push(stream.peer_addr()?);
+        stream.write_all(&buf)?;
+        Ok(())
     }
-    teprintln!("{:?}", peers);
+}
 
-    Ok(())
+// 3. make a user interface that lets people modify the content
+//    inside of the automerge document
+fn main() -> anyhow::Result<()> {
+    let sync_server = SyncServer::new()?;
+    let mut stdin = BufReader::new(std::io::stdin());
+    loop {
+        let mut line = String::new();
+        stdin.read_line(&mut line)?;
+
+        if let Ok(num) = i64::from_str(&line.trim()) {
+            sync_server.set_number(num)?;
+        }
+        println!("Current value: {:?}", sync_server.get_number()?);
+    }
 }
