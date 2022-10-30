@@ -156,7 +156,6 @@ impl SyncServer {
                     if let Err(e) = sync_server.serve_changes() {
                         teprintln!("PULL error: {}", e);
                     }
-                    thread::sleep(Duration::from_millis(100));
                 }
             });
         }
@@ -177,7 +176,7 @@ impl SyncServer {
                         }
                         teprintln!("PUSH error: {}", e);
                     }
-                    thread::sleep(Duration::from_millis(100));
+                    thread::sleep(Duration::from_millis(1000));
                 }
             });
         }
