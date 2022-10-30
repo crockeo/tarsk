@@ -13,7 +13,18 @@ use std::time::Duration;
 
 use anyhow::anyhow;
 use automerge::transaction::Transactable;
+use crossterm::event;
+use crossterm::event::Event;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyModifiers;
+use crossterm::terminal::disable_raw_mode;
+use crossterm::terminal::enable_raw_mode;
 use lazy_static::lazy_static;
+use tui::backend::CrosstermBackend;
+use tui::widgets::Block;
+use tui::widgets::Borders;
+use tui::widgets::Paragraph;
+use tui::Terminal;
 
 // logging! :)
 lazy_static! {
@@ -80,7 +91,7 @@ impl AutomergeText {
             .get(automerge::ROOT, "text")?
             .ok_or(anyhow!("missing object"))?;
 
-	Ok(self.doc.text(id)?)
+        Ok(self.doc.text(id)?)
     }
 }
 
@@ -140,13 +151,13 @@ impl SyncServer {
     }
 
     pub fn add_text<S: AsRef<str>>(&self, insert_pos: usize, text: S) -> anyhow::Result<()> {
-	let mut doc = self.text.lock().unwrap();
-	doc.add_text(insert_pos, text.as_ref())
+        let mut doc = self.text.lock().unwrap();
+        doc.add_text(insert_pos, text.as_ref())
     }
 
     pub fn get_text(&self) -> anyhow::Result<String> {
-	let mut doc = self.text.lock().unwrap();
-	doc.get_text()
+        let mut doc = self.text.lock().unwrap();
+        doc.get_text()
     }
 
     fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
@@ -176,23 +187,54 @@ impl SyncServer {
 // 3. make a user interface that lets people modify the content
 //    inside of the automerge document
 fn main() -> anyhow::Result<()> {
+    print!("{}[2J", 27 as char);
+
     let args: Vec<String> = std::env::args().into_iter().collect();
     let our_port = u16::from_str(&args[1])?;
     let their_port = u16::from_str(&args[2])?;
 
     let sync_server = SyncServer::new(our_port, their_port)?;
-    let mut stdin = BufReader::new(std::io::stdin());
-    let mut insert_pos: usize = 0;
+
+    enable_raw_mode()?;
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    // thinking:
+    //
+    // i need to make some kind of unified event pipeline
+    // pretty much i want to:
+    // - be able to handle user events
+    // - refresh whenever i see that the server has synced
+    // - and then ??? there was a third thing but i forget
+
     loop {
-        let mut line = String::new();
-        stdin.read_line(&mut line)?;
+	let text = sync_server.get_text()?;
 
-	let trimmed = line.trim();
-	sync_server.add_text(insert_pos, trimmed)?;
-	insert_pos += trimmed.len();
+        terminal.draw(|f| {
+            let size = f.size();
+            let paragraph = Paragraph::new(text.clone())
+                .block(Block::default().title("Contents").borders(Borders::ALL));
+            f.render_widget(paragraph, size);
+        });
 
-	println!("{}", sync_server.get_text()?);
+        if let Event::Key(key) = event::read()? {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                break;
+            }
+
+	    match key.code {
+		KeyCode::Char(c) => {
+		    sync_server.add_text(text.len(), c.to_string())?
+		},
+		_ => {},
+	    }
+        }
     }
+
+    disable_raw_mode()?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -216,10 +258,10 @@ mod automerge_number_tests {
 
     #[test]
     fn test_add_interleaved_text() -> anyhow::Result<()> {
-	let mut doc = AutomergeText::new()?;
-	doc.add_text(0, "world!")?;
-	doc.add_text(0, "hello ")?;
-	assert_eq!(doc.get_text()?, "hello world!");
-	Ok(())
+        let mut doc = AutomergeText::new()?;
+        doc.add_text(0, "world!")?;
+        doc.add_text(0, "hello ")?;
+        assert_eq!(doc.get_text()?, "hello world!");
+        Ok(())
     }
 }
