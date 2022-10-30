@@ -284,6 +284,7 @@ fn main() -> anyhow::Result<()> {
 
                     match key.code {
                         KeyCode::Char(c) => sync_server.add_text(text.len(), c.to_string())?,
+			KeyCode::Enter => sync_server.add_text(text.len(), "\n")?,
 			KeyCode::Backspace => sync_server.delete_text(text.len() - 1, 1)?,
                         _ => {}
                     }
