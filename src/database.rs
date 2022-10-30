@@ -11,7 +11,6 @@ use automerge::AutoCommit;
 use automerge::ObjId;
 use automerge::ObjType;
 use chrono::NaiveDate;
-use uuid::Uuid;
 
 pub struct Database {
     doc: Mutex<AutoCommit>,
@@ -34,59 +33,60 @@ impl Database {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
 
-        let doc = AutoCommit::load(&contents)?;
+	Self::from_bytes(&contents)
+    }
+
+    pub fn save<P: AsRef<Path>>(&self, path: &Path) -> anyhow::Result<()> {
+        let mut file = File::create(path)?;
+        file.write_all(&self.to_bytes())?;
+        Ok(())
+    }
+
+    fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
+        let doc = AutoCommit::load(&bytes)?;
         let (_, tasks_id) = doc
             .get(automerge::ROOT, "tasks")?
             .ok_or(anyhow!("Missing task list"))?;
 
         Ok(Self {
             doc: Mutex::new(doc),
-	    tasks_id,
+            tasks_id,
         })
     }
 
-    pub fn save<P: AsRef<Path>>(&self, path: &Path) -> anyhow::Result<()> {
+    fn to_bytes(&self) -> Vec<u8> {
         let mut doc = self.doc.lock().unwrap();
-        let contents = doc.save();
-
-        let mut file = File::create(path)?;
-        file.write_all(&contents)?;
-        Ok(())
+        doc.save()
     }
 
     pub fn add_task<'a>(&'a self) -> anyhow::Result<Task<'a>> {
         let mut doc = self.doc.lock().unwrap();
-        let task_uuid = Uuid::new_v4();
 
-	let task_obj_id = doc.insert_object(&self.tasks_id, 0, ObjType::Map)?;
+        let task_obj_id = doc.insert_object(&self.tasks_id, 0, ObjType::Map)?;
         doc.put_object(&task_obj_id, "title", ObjType::Text)?;
         doc.put_object(&task_obj_id, "body", ObjType::Text)?;
 
         Ok(Task {
             parent: self,
-            task_uuid,
             task_obj_id,
         })
     }
 
     pub fn list_tasks<'a>(&'a self) -> anyhow::Result<Vec<Task<'a>>> {
-        todo!()
+        let doc = self.doc.lock().unwrap();
+        let values = doc.values(&self.tasks_id);
+        Ok(values
+            .into_iter()
+            .map(|(_, task_obj_id)| Task {
+                parent: self,
+                task_obj_id,
+            })
+            .collect())
     }
-
-    pub fn get_task<'a>(&'a self, task_uuid: Uuid) -> anyhow::Result<Option<Task<'a>>> {
-        todo!()
-    }
-}
-
-pub enum TaskField {
-    Title,
-    Scheduled,
-    Body,
 }
 
 pub struct Task<'a> {
     parent: &'a Database,
-    task_uuid: Uuid,
     task_obj_id: ObjId,
 }
 
@@ -183,6 +183,18 @@ mod tests {
     }
 
     #[test]
+    fn test_list_tasks() {
+	let database = Database::new().unwrap();
+	let task = database.add_task().unwrap();
+	task.splice_title(0, 0, "some text").unwrap();
+
+	let tasks = database.list_tasks().unwrap();
+	assert_eq!(tasks.len(), 1);
+	let task = &tasks[0];
+	assert_eq!(task.title().unwrap(), "some text");
+    }
+
+    #[test]
     fn test_splice_title() {
         let database = Database::new().unwrap();
 
@@ -198,5 +210,21 @@ mod tests {
         let task = database.add_task().unwrap();
         task.splice_body(0, 0, "hello world!").unwrap();
         assert_eq!(task.body().unwrap(), "hello world!".to_string());
+    }
+
+    #[test]
+    fn test_serialization_roundtrip() {
+	let bytes = {
+	    let doc = Database::new().unwrap();
+	    let task = doc.add_task().unwrap();
+	    task.splice_title(0, 0, "hello world").unwrap();
+	    doc.to_bytes()
+	};
+
+	let doc = Database::from_bytes(&bytes).unwrap();
+	let tasks = doc.list_tasks().unwrap();
+	assert_eq!(tasks.len(), 1);
+	let task = &tasks[0];
+	assert_eq!(task.title().unwrap(), "hello world");
     }
 }
