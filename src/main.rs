@@ -24,6 +24,7 @@ use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
 
+mod database;
 mod serialization;
 
 // logging! :)
