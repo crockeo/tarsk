@@ -294,18 +294,23 @@ fn main() -> anyhow::Result<()> {
     // - refresh whenever i see that the server has synced
     // - and then ??? there was a third thing but i forget
 
+    let mut buf: Vec<char> = Vec::new();
     loop {
         let text = sync_server.get_text()?;
+        let buf_text: String = buf.clone().into_iter().collect();
 
         terminal.draw(|f| {
             let size = f.size();
-            let paragraph = Paragraph::new(text.clone())
+            let paragraph = Paragraph::new(text.clone() + &buf_text)
                 .block(Block::default().title("Contents").borders(Borders::ALL));
             f.render_widget(paragraph, size);
         })?;
 
         match sync_server.get_event() {
-            Event::Pull => {}
+            Event::Pull => {
+                sync_server.add_text(text.len(), &buf_text)?;
+                buf.clear();
+            }
             Event::Terminal(evt) => {
                 if let crossterm::event::Event::Key(key) = evt {
                     if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -315,9 +320,15 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     match key.code {
-                        KeyCode::Char(c) => sync_server.add_text(text.len(), c.to_string())?,
-                        KeyCode::Enter => sync_server.add_text(text.len(), "\n")?,
-                        KeyCode::Backspace => sync_server.delete_text(text.len() - 1, 1)?,
+                        KeyCode::Char(c) => buf.push(c),
+                        KeyCode::Enter => buf.push('\n'),
+                        KeyCode::Backspace => {
+                            if buf.len() > 0 {
+                                buf.pop();
+                            } else if text.len() > 0 {
+                                sync_server.delete_text(text.len() - 1, 1)?
+                            }
+                        }
                         _ => {}
                     }
                 }
