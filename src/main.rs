@@ -1,5 +1,4 @@
-use std::io::BufRead;
-use std::io::BufReader;
+use std::collections::VecDeque;
 use std::io::Read;
 use std::io::Write;
 use std::net::SocketAddr;
@@ -7,14 +6,13 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Condvar;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::anyhow;
 use automerge::transaction::Transactable;
-use crossterm::event;
-use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
 use crossterm::terminal::disable_raw_mode;
@@ -25,6 +23,8 @@ use tui::widgets::Block;
 use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
+
+mod event_stream;
 
 // logging! :)
 lazy_static! {
@@ -95,12 +95,20 @@ impl AutomergeText {
     }
 }
 
+pub enum Event {
+    Pull,
+    Terminal(crossterm::event::Event),
+}
+
 // 2. make a peering server which periodically syncs up the content
 //    shared inside of the automerge implementation
 pub struct SyncServer {
     listener: TcpListener,
     peer: SocketAddr,
     text: Mutex<AutomergeText>,
+
+    event_queue: Mutex<VecDeque<Event>>,
+    has_event: Condvar,
 }
 
 impl SyncServer {
@@ -111,6 +119,8 @@ impl SyncServer {
             listener,
             peer,
             text: Mutex::new(AutomergeText::new()?),
+            event_queue: Mutex::new(VecDeque::new()),
+            has_event: Condvar::new(),
         });
 
         {
@@ -147,6 +157,20 @@ impl SyncServer {
             });
         }
 
+	{
+	    let sync_server = sync_server.clone();
+	    thread::spawn(move || {
+                // TODO: make this killable?
+                loop {
+		    let evt = crossterm::event::read();
+		    if let Err(_) = evt { continue; }
+		    let evt = evt.unwrap();
+
+		    sync_server.push_event(Event::Terminal(evt));
+                }
+	    });
+	}
+
         Ok(sync_server)
     }
 
@@ -160,6 +184,21 @@ impl SyncServer {
         doc.get_text()
     }
 
+    pub fn get_event(&self) -> Event {
+        let mut event_queue_guard = self.event_queue.lock().unwrap();
+        while event_queue_guard.len() == 0 {
+            event_queue_guard = self.has_event.wait(event_queue_guard).unwrap();
+        }
+        event_queue_guard.pop_front().unwrap()
+    }
+
+    fn push_event(&self, evt: Event) {
+	let mut event_queue_guard = self.event_queue.lock().unwrap();
+	event_queue_guard.push_back(evt);
+	self.has_event.notify_one();
+
+    }
+
     fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let (mut stream, _) = self.listener.accept()?;
 
@@ -169,6 +208,8 @@ impl SyncServer {
         let mut other_doc = AutomergeText::load(&contents)?;
         let mut doc = self.text.lock().unwrap();
         doc.merge(&mut other_doc)?;
+
+	self.push_event(Event::Pull);
 
         Ok(())
     }
@@ -209,26 +250,31 @@ fn main() -> anyhow::Result<()> {
     // - and then ??? there was a third thing but i forget
 
     loop {
-	let text = sync_server.get_text()?;
+        let text = sync_server.get_text()?;
 
         terminal.draw(|f| {
             let size = f.size();
             let paragraph = Paragraph::new(text.clone())
                 .block(Block::default().title("Contents").borders(Borders::ALL));
             f.render_widget(paragraph, size);
-        });
+        })?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                break;
+        match sync_server.get_event() {
+            Event::Pull => {},
+            Event::Terminal(evt) => {
+                if let crossterm::event::Event::Key(key) = evt {
+                    if key.modifiers.contains(KeyModifiers::CONTROL)
+                        && key.code == KeyCode::Char('c')
+                    {
+                        break;
+                    }
+
+                    match key.code {
+                        KeyCode::Char(c) => sync_server.add_text(text.len(), c.to_string())?,
+                        _ => {}
+                    }
+                }
             }
-
-	    match key.code {
-		KeyCode::Char(c) => {
-		    sync_server.add_text(text.len(), c.to_string())?
-		},
-		_ => {},
-	    }
         }
     }
 
