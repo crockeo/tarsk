@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::Mutex;
 
+use automerge::ActorId;
 use automerge::AutoCommit;
 use chrono::NaiveDate;
 
@@ -13,8 +14,10 @@ pub struct Database {
 
 impl Database {
     pub fn new() -> Self {
+	let mut doc = AutoCommit::new();
+	doc.set_actor(ActorId::random());
         Self {
-            doc: Mutex::new(AutoCommit::new()),
+            doc: Mutex::new(doc),
         }
     }
 
