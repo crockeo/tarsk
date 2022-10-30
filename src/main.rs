@@ -251,20 +251,20 @@ impl SyncServer {
     fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let mut stream = TcpStream::connect(self.peer)?;
 
-	let heads = {
-	    let mut doc = self.text.lock().unwrap();
-	    doc.get_heads()
-	};
-	let serialized_heads = serialization::serialize_change_hashes(&heads);
-	stream.write_all(&serialized_heads)?;
+        let heads = {
+            let mut doc = self.text.lock().unwrap();
+            doc.get_heads()
+        };
+        let serialized_heads = serialization::serialize_change_hashes(&heads);
+        stream.write_all(&serialized_heads)?;
 
-	let mut raw_changes = Vec::new();
-	stream.read_to_end(&mut raw_changes)?;
-	let changes = serialization::deserialize_changes(&raw_changes)?;
-	{
-	    let mut doc = self.text.lock().unwrap();
-	    doc.apply_changes(changes)?;
-	}
+        let mut raw_changes = Vec::new();
+        stream.read_to_end(&mut raw_changes)?;
+        let changes = serialization::deserialize_changes(&raw_changes)?;
+        {
+            let mut doc = self.text.lock().unwrap();
+            doc.apply_changes(changes)?;
+        }
 
         self.push_event(Event::Pull);
         Ok(())
