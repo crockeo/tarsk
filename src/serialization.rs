@@ -67,7 +67,13 @@ mod tests {
         let mut doc = AutoCommit::new();
         _ = doc.put(automerge::ROOT, "number", 1234);
 
-        let changes = doc.get_changes(&[]).unwrap();
+        let changes: Vec<automerge::Change> = doc
+            .get_changes(&[])
+            .unwrap()
+            .into_iter()
+            .map(automerge::Change::clone)
+            .collect();
+
         let raw = serialize_changes(&changes).unwrap();
         let deserialized_changes = deserialize_changes(&raw);
         assert!(deserialized_changes.is_ok());
