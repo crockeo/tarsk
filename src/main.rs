@@ -24,8 +24,6 @@ use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
 
-mod event_stream;
-
 // logging! :)
 lazy_static! {
     static ref PRINT_LOCK: Mutex<()> = Mutex::new(());
@@ -83,6 +81,16 @@ impl AutomergeText {
         self.doc.splice_text(id, insert_pos, 0, contents.as_ref())?;
 
         Ok(())
+    }
+
+    pub fn delete_text(&mut self, delete_pos: usize, amount: usize) -> anyhow::Result<()> {
+        let (_, id) = self
+            .doc
+            .get(automerge::ROOT, "text")?
+            .ok_or(anyhow!("missing object"))?;
+
+	self.doc.splice(id, delete_pos, amount, [])?;
+	Ok(())
     }
 
     pub fn get_text(&mut self) -> anyhow::Result<String> {
@@ -179,6 +187,11 @@ impl SyncServer {
         doc.add_text(insert_pos, text.as_ref())
     }
 
+    pub fn delete_text(&self, delete_pos: usize, amount: usize) -> anyhow::Result<()> {
+	let mut doc = self.text.lock().unwrap();
+	doc.delete_text(delete_pos, amount)
+    }
+
     pub fn get_text(&self) -> anyhow::Result<String> {
         let mut doc = self.text.lock().unwrap();
         doc.get_text()
@@ -271,6 +284,7 @@ fn main() -> anyhow::Result<()> {
 
                     match key.code {
                         KeyCode::Char(c) => sync_server.add_text(text.len(), c.to_string())?,
+			KeyCode::Backspace => sync_server.delete_text(text.len() - 1, 1)?,
                         _ => {}
                     }
                 }
