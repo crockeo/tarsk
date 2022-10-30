@@ -12,7 +12,6 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use anyhow::bail;
 use automerge::transaction::Transactable;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
@@ -83,15 +82,6 @@ impl AutomergeText {
         changes: T,
     ) -> anyhow::Result<()> {
         self.doc.apply_changes(changes)?;
-        Ok(())
-    }
-
-    pub fn save(&mut self) -> Vec<u8> {
-        self.doc.save()
-    }
-
-    pub fn merge(&mut self, other: &mut AutomergeText) -> anyhow::Result<()> {
-        self.doc.merge(&mut other.doc)?;
         Ok(())
     }
 
