@@ -15,15 +15,18 @@ use uuid::Uuid;
 
 pub struct Database {
     doc: Mutex<AutoCommit>,
+    tasks_id: ObjId,
 }
 
 impl Database {
-    pub fn new() -> Self {
+    pub fn new() -> anyhow::Result<Self> {
         let mut doc = AutoCommit::new();
         doc.set_actor(ActorId::random());
-        Self {
+        let tasks_id = doc.put_object(automerge::ROOT, "tasks", ObjType::List)?;
+        Ok(Self {
             doc: Mutex::new(doc),
-        }
+            tasks_id,
+        })
     }
 
     pub fn load<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
@@ -32,8 +35,13 @@ impl Database {
         file.read_to_end(&mut contents)?;
 
         let doc = AutoCommit::load(&contents)?;
+        let (_, tasks_id) = doc
+            .get(automerge::ROOT, "tasks")?
+            .ok_or(anyhow!("Missing task list"))?;
+
         Ok(Self {
             doc: Mutex::new(doc),
+	    tasks_id,
         })
     }
 
@@ -50,9 +58,9 @@ impl Database {
         let mut doc = self.doc.lock().unwrap();
         let task_uuid = Uuid::new_v4();
 
-        let task_obj_id = doc.put_object(automerge::ROOT, task_uuid.to_string(), ObjType::Map)?;
-	doc.put_object(&task_obj_id, "title", ObjType::Text)?;
-	doc.put_object(&task_obj_id, "body", ObjType::Text)?;
+	let task_obj_id = doc.insert_object(&self.tasks_id, 0, ObjType::Map)?;
+        doc.put_object(&task_obj_id, "title", ObjType::Text)?;
+        doc.put_object(&task_obj_id, "body", ObjType::Text)?;
 
         Ok(Task {
             parent: self,
@@ -94,9 +102,9 @@ impl<'a> Task<'a> {
             .ok_or(anyhow!("Missing body"))?;
 
         Ok(TaskImage {
-	    title: doc.text(title_id)?,
+            title: doc.text(title_id)?,
             scheduled: None,
-	    body: doc.text(body_id)?,
+            body: doc.text(body_id)?,
         })
     }
 
@@ -106,7 +114,7 @@ impl<'a> Task<'a> {
             .get(&self.task_obj_id, "title")?
             .ok_or(anyhow!("Missing title"))?;
 
-	Ok(doc.text(title_id)?)
+        Ok(doc.text(title_id)?)
     }
 
     pub fn splice_title<S: AsRef<str>>(
@@ -129,7 +137,7 @@ impl<'a> Task<'a> {
             .get(&self.task_obj_id, "body")?
             .ok_or(anyhow!("Missing body"))?;
 
-	Ok(doc.text(body_id)?)
+        Ok(doc.text(body_id)?)
     }
 
     pub fn splice_body<S: AsRef<str>>(
@@ -160,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_add_task() {
-        let database = Database::new();
+        let database = Database::new().unwrap();
 
         let task = database.add_task().unwrap();
         let task_image = task.image().unwrap();
@@ -176,19 +184,19 @@ mod tests {
 
     #[test]
     fn test_splice_title() {
-	let database = Database::new();
+        let database = Database::new().unwrap();
 
-	let task = database.add_task().unwrap();
-	task.splice_title(0, 0, "hello world!").unwrap();
-	assert_eq!(task.title().unwrap(), "hello world!".to_string());
+        let task = database.add_task().unwrap();
+        task.splice_title(0, 0, "hello world!").unwrap();
+        assert_eq!(task.title().unwrap(), "hello world!".to_string());
     }
 
     #[test]
     fn test_splice_body() {
-	let database = Database::new();
+        let database = Database::new().unwrap();
 
-	let task = database.add_task().unwrap();
-	task.splice_body(0, 0, "hello world!").unwrap();
-	assert_eq!(task.body().unwrap(), "hello world!".to_string());
+        let task = database.add_task().unwrap();
+        task.splice_body(0, 0, "hello world!").unwrap();
+        assert_eq!(task.body().unwrap(), "hello world!".to_string());
     }
 }
