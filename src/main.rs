@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
+use anyhow::anyhow;
 use automerge::transaction::Transactable;
 use lazy_static::lazy_static;
 
@@ -31,15 +32,16 @@ macro_rules! teprintln {
 
 // 1. make an automerge document that has some kind of content in it
 //    see https://github.com/automerge/automerge-rs
-pub struct AutomergeNumber {
+pub struct AutomergeText {
     doc: automerge::AutoCommit,
 }
 
-impl AutomergeNumber {
-    pub fn new() -> Self {
+impl AutomergeText {
+    pub fn new() -> anyhow::Result<Self> {
         let mut doc = automerge::AutoCommit::new();
+        doc.put_object(&automerge::ROOT, "text", automerge::ObjType::List)?;
         doc.set_actor(automerge::ActorId::random());
-        Self { doc }
+        Ok(Self { doc })
     }
 
     pub fn load(data: &[u8]) -> anyhow::Result<Self> {
@@ -52,9 +54,35 @@ impl AutomergeNumber {
         self.doc.save()
     }
 
-    pub fn merge(&mut self, other: &mut AutomergeNumber) -> anyhow::Result<()> {
+    pub fn merge(&mut self, other: &mut AutomergeText) -> anyhow::Result<()> {
         self.doc.merge(&mut other.doc)?;
         Ok(())
+    }
+
+    pub fn add_text<S: AsRef<str>>(
+        &mut self,
+        insert_pos: usize,
+        contents: S,
+    ) -> anyhow::Result<()> {
+        let (_, id) = self
+            .doc
+            .get(automerge::ROOT, "text")?
+            .ok_or(anyhow!("missing object"))?;
+
+        self.doc.splice_text(id, insert_pos, 0, contents.as_ref())?;
+
+        Ok(())
+    }
+
+    pub fn get_text(&mut self) -> anyhow::Result<String> {
+        println!("{:?}", self.doc.document());
+
+        let (_, id) = self
+            .doc
+            .get(automerge::ROOT, "text")?
+            .ok_or(anyhow!("missing object"))?;
+
+	Ok(self.doc.text(id)?)
     }
 
     pub fn set_number(&mut self, number: i64) -> anyhow::Result<()> {
@@ -78,7 +106,7 @@ impl AutomergeNumber {
 pub struct SyncServer {
     listener: TcpListener,
     peer: SocketAddr,
-    number: Mutex<AutomergeNumber>,
+    number: Mutex<AutomergeText>,
 }
 
 impl SyncServer {
@@ -88,7 +116,7 @@ impl SyncServer {
         let sync_server = Arc::new(SyncServer {
             listener,
             peer,
-            number: Mutex::new(AutomergeNumber::new()),
+            number: Mutex::new(AutomergeText::new()?),
         });
 
         {
@@ -144,7 +172,7 @@ impl SyncServer {
         let mut contents = vec![];
         stream.read_to_end(&mut contents)?;
 
-        let mut other_doc = AutomergeNumber::load(&contents)?;
+        let mut other_doc = AutomergeText::load(&contents)?;
         let mut doc = self.number.lock().unwrap();
         doc.merge(&mut other_doc)?;
 
@@ -188,14 +216,14 @@ mod automerge_number_tests {
 
     #[test]
     fn test_get_number_empty() -> anyhow::Result<()> {
-        let number = AutomergeNumber::new();
+        let number = AutomergeText::new()?;
         assert_eq!(number.get_number()?, None);
         Ok(())
     }
 
     #[test]
     fn test_set_get_number() -> anyhow::Result<()> {
-        let mut number = AutomergeNumber::new();
+        let mut number = AutomergeText::new()?;
         number.set_number(1234)?;
         assert_eq!(number.get_number()?, Some(1234));
         Ok(())
@@ -203,7 +231,7 @@ mod automerge_number_tests {
 
     #[test]
     fn test_set_get_number_multiple() -> anyhow::Result<()> {
-        let mut number = AutomergeNumber::new();
+        let mut number = AutomergeText::new()?;
         number.set_number(1234)?;
         number.set_number(5678)?;
         assert_eq!(number.get_number()?, Some(5678));
@@ -212,8 +240,8 @@ mod automerge_number_tests {
 
     #[test]
     fn test_sync() -> anyhow::Result<()> {
-        let mut num1 = AutomergeNumber::new();
-        let mut num2 = AutomergeNumber::new();
+        let mut num1 = AutomergeText::new()?;
+        let mut num2 = AutomergeText::new()?;
 
         num1.set_number(1234)?;
         assert_eq!(num1.get_number()?, Some(1234));
@@ -228,9 +256,9 @@ mod automerge_number_tests {
 
     #[test]
     fn test_sync_multiple() -> anyhow::Result<()> {
-        let mut num1 = AutomergeNumber::new();
-        let mut num2 = AutomergeNumber::new();
-        let mut num3 = AutomergeNumber::new();
+        let mut num1 = AutomergeText::new()?;
+        let mut num2 = AutomergeText::new()?;
+        let mut num3 = AutomergeText::new()?;
 
         num1.set_number(1234)?;
         assert_eq!(num1.get_number()?, Some(1234));
@@ -248,5 +276,29 @@ mod automerge_number_tests {
         assert_eq!(num3.get_number()?, Some(5678));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_empty_text() -> anyhow::Result<()> {
+        let mut doc = AutomergeText::new()?;
+        assert_eq!(doc.get_text()?, "");
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_text() -> anyhow::Result<()> {
+        let mut doc = AutomergeText::new()?;
+        doc.add_text(0, "hello world!")?;
+        assert_eq!(doc.get_text()?, "hello world!");
+        Ok(())
+    }
+
+    #[test]
+    fn test_add_interleaved_text() -> anyhow::Result<()> {
+	let mut doc = AutomergeText::new()?;
+	doc.add_text(0, "world!")?;
+	doc.add_text(0, "hello ")?;
+	assert_eq!(doc.get_text()?, "hello world!");
+	Ok(())
     }
 }
