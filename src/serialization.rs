@@ -30,7 +30,7 @@ pub fn deserialize_change_hashes(bytes: &[u8]) -> anyhow::Result<Vec<ChangeHash>
     Ok(hashes)
 }
 
-pub fn serialize_changes(changes: &[&Change]) -> anyhow::Result<Vec<u8>> {
+pub fn serialize_changes(changes: &[Change]) -> anyhow::Result<Vec<u8>> {
     let serialized = serde_json::to_string(
         &changes
             .iter()

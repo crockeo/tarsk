@@ -12,6 +12,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::anyhow;
+use anyhow::bail;
 use automerge::transaction::Transactable;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyModifiers;
@@ -23,6 +24,8 @@ use tui::widgets::Block;
 use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
+
+mod serialization;
 
 // logging! :)
 lazy_static! {
@@ -59,6 +62,30 @@ impl AutomergeText {
         })
     }
 
+    pub fn get_heads(&mut self) -> Vec<automerge::ChangeHash> {
+        self.doc.get_heads()
+    }
+
+    pub fn get_changes(
+        &mut self,
+        heads: &[automerge::ChangeHash],
+    ) -> anyhow::Result<Vec<automerge::Change>> {
+        Ok(self
+            .doc
+            .get_changes(heads)?
+            .into_iter()
+            .map(automerge::Change::clone)
+            .collect())
+    }
+
+    pub fn apply_changes<T: IntoIterator<Item = automerge::Change>>(
+        &mut self,
+        changes: T,
+    ) -> anyhow::Result<()> {
+        self.doc.apply_changes(changes)?;
+        Ok(())
+    }
+
     pub fn save(&mut self) -> Vec<u8> {
         self.doc.save()
     }
@@ -89,8 +116,8 @@ impl AutomergeText {
             .get(automerge::ROOT, "text")?
             .ok_or(anyhow!("missing object"))?;
 
-	self.doc.splice(id, delete_pos, amount, [])?;
-	Ok(())
+        self.doc.splice(id, delete_pos, amount, [])?;
+        Ok(())
     }
 
     pub fn get_text(&mut self) -> anyhow::Result<String> {
@@ -136,7 +163,7 @@ impl SyncServer {
             thread::spawn(move || {
                 // TODO: make this killable?
                 loop {
-                    if let Err(e) = sync_server.pull() {
+                    if let Err(e) = sync_server.serve_changes() {
                         teprintln!("PULL error: {}", e);
                     }
                     thread::sleep(Duration::from_millis(100));
@@ -149,7 +176,7 @@ impl SyncServer {
             thread::spawn(move || {
                 // TODO: make this killable?
                 loop {
-                    if let Err(e) = sync_server.push() {
+                    if let Err(e) = sync_server.pull() {
                         // TODO: this is so ugly...
                         match e.downcast_ref::<std::io::Error>() {
                             Some(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
@@ -165,19 +192,21 @@ impl SyncServer {
             });
         }
 
-	{
-	    let sync_server = sync_server.clone();
-	    thread::spawn(move || {
+        {
+            let sync_server = sync_server.clone();
+            thread::spawn(move || {
                 // TODO: make this killable?
                 loop {
-		    let evt = crossterm::event::read();
-		    if let Err(_) = evt { continue; }
-		    let evt = evt.unwrap();
+                    let evt = crossterm::event::read();
+                    if let Err(_) = evt {
+                        continue;
+                    }
+                    let evt = evt.unwrap();
 
-		    sync_server.push_event(Event::Terminal(evt));
+                    sync_server.push_event(Event::Terminal(evt));
                 }
-	    });
-	}
+            });
+        }
 
         Ok(sync_server)
     }
@@ -188,8 +217,8 @@ impl SyncServer {
     }
 
     pub fn delete_text(&self, delete_pos: usize, amount: usize) -> anyhow::Result<()> {
-	let mut doc = self.text.lock().unwrap();
-	doc.delete_text(delete_pos, amount)
+        let mut doc = self.text.lock().unwrap();
+        doc.delete_text(delete_pos, amount)
     }
 
     pub fn get_text(&self) -> anyhow::Result<String> {
@@ -206,34 +235,48 @@ impl SyncServer {
     }
 
     fn push_event(&self, evt: Event) {
-	let mut event_queue_guard = self.event_queue.lock().unwrap();
-	event_queue_guard.push_back(evt);
-	self.has_event.notify_one();
-
+        let mut event_queue_guard = self.event_queue.lock().unwrap();
+        event_queue_guard.push_back(evt);
+        self.has_event.notify_one();
     }
 
-    fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
+    fn serve_changes(self: &Arc<Self>) -> anyhow::Result<()> {
         let (mut stream, _) = self.listener.accept()?;
 
-        let mut contents = vec![];
-        stream.read_to_end(&mut contents)?;
+        // we receive from a client all of their latest changes (their heads)
+        let mut buf: [u8; 1024] = [0; 1024];
+        let bytes_read = stream.read(&mut buf)?;
+        let heads = serialization::deserialize_change_hashes(&buf[0..bytes_read])?;
 
-        let mut other_doc = AutomergeText::load(&contents)?;
-        let mut doc = self.text.lock().unwrap();
-        doc.merge(&mut other_doc)?;
-
-	self.push_event(Event::Pull);
+        // we give them back our set of changes after those heads
+        let changes: Vec<automerge::Change> = {
+            let mut doc = self.text.lock().unwrap();
+            doc.get_changes(&heads[1..])?
+        };
+        stream.write_all(&serialization::serialize_changes(&changes)?)?;
 
         Ok(())
     }
 
-    fn push(self: &Arc<Self>) -> anyhow::Result<()> {
+    fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let mut stream = TcpStream::connect(self.peer)?;
-        let buf = {
-            let mut doc = self.text.lock().unwrap();
-            doc.save()
-        };
-        stream.write_all(&buf)?;
+
+	let heads = {
+	    let mut doc = self.text.lock().unwrap();
+	    doc.get_heads()
+	};
+	let serialized_heads = serialization::serialize_change_hashes(&heads);
+	stream.write_all(&serialized_heads)?;
+
+	let mut raw_changes = Vec::new();
+	stream.read_to_end(&mut raw_changes)?;
+	let changes = serialization::deserialize_changes(&raw_changes)?;
+	{
+	    let mut doc = self.text.lock().unwrap();
+	    doc.apply_changes(changes)?;
+	}
+
+        self.push_event(Event::Pull);
         Ok(())
     }
 }
@@ -273,7 +316,7 @@ fn main() -> anyhow::Result<()> {
         })?;
 
         match sync_server.get_event() {
-            Event::Pull => {},
+            Event::Pull => {}
             Event::Terminal(evt) => {
                 if let crossterm::event::Event::Key(key) = evt {
                     if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -284,8 +327,8 @@ fn main() -> anyhow::Result<()> {
 
                     match key.code {
                         KeyCode::Char(c) => sync_server.add_text(text.len(), c.to_string())?,
-			KeyCode::Enter => sync_server.add_text(text.len(), "\n")?,
-			KeyCode::Backspace => sync_server.delete_text(text.len() - 1, 1)?,
+                        KeyCode::Enter => sync_server.add_text(text.len(), "\n")?,
+                        KeyCode::Backspace => sync_server.delete_text(text.len() - 1, 1)?,
                         _ => {}
                     }
                 }
