@@ -19,11 +19,18 @@ impl Logger {
         })
     }
 
-    pub fn log<S: AsRef<str>>(&self, line: S) -> anyhow::Result<()> {
+    fn log<S: AsRef<str>>(&self, level: &'static str, line: S) {
         let mut file = self.file.lock().unwrap();
-        file.write(line.as_ref().as_bytes())?;
-        file.write("\n".as_bytes())?;
-        Ok(())
+	let _ = file.write(format!("{} {}\n", level, line.as_ref()).as_bytes());
+    }
+
+    pub fn debug<S: AsRef<str>>(&self, line: S) {
+	// NOTE: uncomment to do print debugging
+	// self.log("DEBUG", line)
+    }
+
+    pub fn error<S: AsRef<str>>(&self, line: S) {
+	self.log("ERROR", line)
     }
 }
 

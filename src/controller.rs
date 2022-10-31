@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
-use std::io::Read;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::net::TcpListener;
@@ -70,22 +71,27 @@ impl Controller {
     fn serve_thread(self: Arc<Self>) {
         loop {
             if let Err(e) = self.serve() {
-                let _ = logging::GLOBAL.log(&format!("Error while serving: {}", e));
+                logging::GLOBAL.error(&format!("Error while serving: {}", e));
             }
+            thread::sleep(Duration::from_millis(1000));
         }
     }
 
     fn serve(self: &Arc<Self>) -> anyhow::Result<()> {
         let (mut stream, _) = self.listener.accept()?;
+        let mut reader = BufReader::new(stream.try_clone()?);
 
         // we receive from a client all of their latest changes (their heads)
-        let mut buf: [u8; 1024] = [0; 1024];
-        let bytes_read = stream.read(&mut buf)?;
-        let heads = serialization::deserialize_change_hashes(&buf[0..bytes_read])?;
+        logging::GLOBAL.debug("SERVE Waiting for heads...");
+        let mut raw_heads = Vec::new();
+        reader.read_until(b'\n', &mut raw_heads)?;
+        let heads = serialization::deserialize_change_hashes(&raw_heads)?;
 
         // we give them back our set of changes after those heads
+        logging::GLOBAL.debug("SERVE Sending changes...");
         let changes = self.database.get_changes(&heads)?;
-        stream.write_all(&serialization::serialize_changes(&changes)?)?;
+        let serialized_changes = serialization::serialize_changes(&changes)?;
+        stream.write_all(&serialized_changes)?;
 
         Ok(())
     }
@@ -93,53 +99,58 @@ impl Controller {
     fn pull_thread(self: Arc<Self>) {
         loop {
             if let Err(e) = self.pull() {
-		// TODO: make this less ugly whenever this feature becomes stable?
+                // TODO: make this less ugly whenever this feature becomes stable?
                 if let Some(e) = e.downcast_ref::<std::io::Error>() {
-		    if e.kind() == std::io::ErrorKind::ConnectionRefused {
-			continue
-		    }
-		}
+                    if e.kind() == std::io::ErrorKind::ConnectionRefused {
+                        continue;
+                    }
+                }
 
-                let _ = logging::GLOBAL.log(&format!("Error while pulling: {}", e));
+                logging::GLOBAL.error(&format!("Error while pulling: {}", e));
             }
+            thread::sleep(Duration::from_millis(1000));
         }
     }
 
     fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let mut stream = TcpStream::connect(self.peer)?;
+        let mut reader = BufReader::new(stream.try_clone()?);
 
-        let timeout = Some(Duration::from_secs(1));
-        stream.set_read_timeout(timeout)?;
-        stream.set_write_timeout(timeout)?;
+        logging::GLOBAL.debug("PULL  Sending heads...");
+        let heads = self.database.get_heads();
+        let raw_heads = serialization::serialize_change_hashes(&heads[1..])?;
+        stream.write_all(&raw_heads)?;
+        stream.write_all(b"\n")?;
 
-        let heads = &self.database.get_heads()[1..];
-        let serialized_heads = serialization::serialize_change_hashes(&heads);
-        stream.write_all(&serialized_heads)?;
-
+        logging::GLOBAL.debug("PULL  Waiting for changes...");
         let mut raw_changes = Vec::new();
-        stream.read_to_end(&mut raw_changes)?;
+        reader.read_until(b'\n', &mut raw_changes)?;
         let changes = serialization::deserialize_changes(&raw_changes)?;
+
+	logging::GLOBAL.debug("PULL  Applying changes...");
         self.database.apply_changes(changes)?;
 
+	logging::GLOBAL.debug("PULL  Pull event...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Pull);
         self.has_event.notify_one();
 
-        let _ = logging::GLOBAL.log("Successfully pulled!");
-
+	logging::GLOBAL.debug("PULL  Done!");
         Ok(())
     }
 
     fn poll_terminal_thread(self: Arc<Self>) {
         loop {
             if let Err(e) = self.poll_terminal() {
-                let _ = logging::GLOBAL.log(&format!("Error while polling: {}", e));
+                logging::GLOBAL.error(&format!("Error while polling: {}", e));
             }
         }
     }
 
     fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
         let evt = crossterm::event::read()?;
+
+	logging::GLOBAL.debug("POLL  Got event! Publishing...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Terminal(evt));
         self.has_event.notify_one();

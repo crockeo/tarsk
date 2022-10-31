@@ -1,32 +1,15 @@
-use anyhow::bail;
 use automerge::Change;
 use automerge::ChangeHash;
 use automerge::ExpandedChange;
 
-const CHANGE_HASH_WIDTH: usize = 32;
-
-pub fn serialize_change_hashes(hashes: &[ChangeHash]) -> Vec<u8> {
-    let mut combined = Vec::with_capacity(hashes.len() * CHANGE_HASH_WIDTH);
-    for hash in hashes.into_iter() {
-        combined.extend(hash.0.iter());
-    }
-    combined
+pub fn serialize_change_hashes(hashes: &[ChangeHash]) -> anyhow::Result<Vec<u8>> {
+    let serialized = serde_json::to_string(hashes)?;
+    Ok(serialized.into_bytes())
 }
 
 pub fn deserialize_change_hashes(bytes: &[u8]) -> anyhow::Result<Vec<ChangeHash>> {
-    if bytes.len() % CHANGE_HASH_WIDTH != 0 {
-        bail!(
-            "Improper buf size {}, must be divisible by {}",
-            bytes.len(),
-            CHANGE_HASH_WIDTH
-        );
-    }
-
-    let mut hashes = Vec::new();
-    for i in 0..bytes.len() / CHANGE_HASH_WIDTH {
-        let chunk = &bytes[i * CHANGE_HASH_WIDTH..(i + 1) * CHANGE_HASH_WIDTH];
-        hashes.push(ChangeHash(chunk.try_into()?));
-    }
+    let serialized = std::str::from_utf8(bytes)?;
+    let hashes: Vec<ChangeHash> = serde_json::from_str(serialized)?;
     Ok(hashes)
 }
 
@@ -56,7 +39,7 @@ mod tests {
     #[test]
     fn test_change_hashes_roundtrip() {
         let change_hashes = vec![ChangeHash([0; 32])];
-        let raw = serialize_change_hashes(&change_hashes);
+        let raw = serialize_change_hashes(&change_hashes).unwrap();
         let deserialized_change_hashes = deserialize_change_hashes(&raw);
         assert!(deserialized_change_hashes.is_ok());
         assert_eq!(change_hashes, deserialized_change_hashes.unwrap());

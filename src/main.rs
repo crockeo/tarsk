@@ -68,7 +68,7 @@ fn main() -> anyhow::Result<()> {
 
             f.render_widget(task_list, chunks[0]);
             f.render_widget(task_body, chunks[1]);
-        });
+        })?;
 
         match controller.get_event() {
             controller::Event::Terminal(Event::Key(key)) => {
