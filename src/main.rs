@@ -36,6 +36,23 @@ fn main() -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // TODO: build this out into a proof-of-concept TUI
+    //
+    // - render tasks down the left side
+    // - have TAB swap between:
+    //   - list of tasks on the LHS
+    //     - up and down control which is currently selected
+    //   - title of current task
+    //     - normal editing (full character passthrough, incl delete)
+    //   - body of current task
+    //     - normal editing (full character passthrough, incl delete)
+    // - have shift+TAB go backwards
+    //
+    // - to consider after:
+    //   - how would one make a filtered view (e.g. things i've scheduled today)
+    //   - how would one make this more efficient? e.g. debouncing edits to tasks
+    //     - maybe look into a version of the db which doesn't autocommit
+    //       to have more fine-grained control over this?
     let task_index: usize = 0;
     loop {
         let tasks: Vec<TaskImage> = db
