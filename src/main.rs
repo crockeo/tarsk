@@ -24,10 +24,10 @@ use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
 
+mod controller;
 mod database;
 mod logging;
 mod serialization;
-mod server;
 
 // logging! :)
 lazy_static! {

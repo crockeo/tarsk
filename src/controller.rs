@@ -13,7 +13,7 @@ use std::thread;
 use crate::database::Database;
 use crate::serialization;
 
-pub struct Server {
+pub struct Controller {
     database: Arc<Database>,
 
     listener: TcpListener,
@@ -23,7 +23,7 @@ pub struct Server {
     has_event: Condvar,
 }
 
-impl Server {
+impl Controller {
     pub fn new(
         database: Arc<Database>,
         our_port: u16,
