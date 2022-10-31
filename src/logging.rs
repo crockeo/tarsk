@@ -26,7 +26,7 @@ impl Logger {
 
     pub fn debug<S: AsRef<str>>(&self, line: S) {
         // NOTE: uncomment to do print debugging
-        // self.log("DEBUG", line)
+        self.log("DEBUG", line)
     }
 
     pub fn error<S: AsRef<str>>(&self, line: S) {

@@ -82,13 +82,11 @@ impl Controller {
         let mut reader = BufReader::new(stream.try_clone()?);
 
         // we receive from a client all of their latest changes (their heads)
-        logging::GLOBAL.debug("SERVE Waiting for heads...");
         let mut raw_heads = Vec::new();
         reader.read_until(b'\n', &mut raw_heads)?;
         let heads = serialization::deserialize_change_hashes(&raw_heads)?;
 
         // we give them back our set of changes after those heads
-        logging::GLOBAL.debug("SERVE Sending changes...");
         let changes = self.database.get_changes(&heads)?;
         let serialized_changes = serialization::serialize_changes(&changes)?;
         stream.write_all(&serialized_changes)?;
@@ -116,26 +114,21 @@ impl Controller {
         let mut stream = TcpStream::connect(self.peer)?;
         let mut reader = BufReader::new(stream.try_clone()?);
 
-        logging::GLOBAL.debug("PULL  Sending heads...");
         let heads = self.database.get_heads();
         let raw_heads = serialization::serialize_change_hashes(&heads[1..])?;
         stream.write_all(&raw_heads)?;
         stream.write_all(b"\n")?;
 
-        logging::GLOBAL.debug("PULL  Waiting for changes...");
         let mut raw_changes = Vec::new();
         reader.read_until(b'\n', &mut raw_changes)?;
         let changes = serialization::deserialize_changes(&raw_changes)?;
 
-        logging::GLOBAL.debug("PULL  Applying changes...");
         self.database.apply_changes(changes)?;
 
-        logging::GLOBAL.debug("PULL  Pull event...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Pull);
         self.has_event.notify_one();
 
-        logging::GLOBAL.debug("PULL  Done!");
         Ok(())
     }
 
@@ -150,7 +143,6 @@ impl Controller {
     fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
         let evt = crossterm::event::read()?;
 
-        logging::GLOBAL.debug("POLL  Got event! Publishing...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Terminal(evt));
         self.has_event.notify_one();

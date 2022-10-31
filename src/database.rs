@@ -16,17 +16,15 @@ use chrono::NaiveDate;
 
 pub struct Database {
     doc: Mutex<AutoCommit>,
-    tasks_id: ObjId,
 }
 
 impl Database {
     pub fn new() -> anyhow::Result<Self> {
         let mut doc = AutoCommit::new();
         doc.set_actor(ActorId::random());
-        let tasks_id = doc.put_object(automerge::ROOT, "tasks", ObjType::List)?;
+        doc.put_object(automerge::ROOT, "tasks", ObjType::List)?;
         Ok(Self {
             doc: Mutex::new(doc),
-            tasks_id,
         })
     }
 
@@ -46,13 +44,8 @@ impl Database {
 
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
         let doc = AutoCommit::load(&bytes)?;
-        let (_, tasks_id) = doc
-            .get(automerge::ROOT, "tasks")?
-            .ok_or(anyhow!("Missing task list"))?;
-
         Ok(Self {
             doc: Mutex::new(doc),
-            tasks_id,
         })
     }
 
@@ -85,8 +78,11 @@ impl Database {
 
     pub fn add_task<'a>(&'a self) -> anyhow::Result<Task<'a>> {
         let mut doc = self.doc.lock().unwrap();
+        let (_, tasks_id) = doc
+            .get(automerge::ROOT, "tasks")?
+            .ok_or(anyhow!("Missing tasks"))?;
 
-        let task_obj_id = doc.insert_object(&self.tasks_id, 0, ObjType::Map)?;
+        let task_obj_id = doc.insert_object(tasks_id, 0, ObjType::Map)?;
         doc.put_object(&task_obj_id, "title", ObjType::Text)?;
         doc.put_object(&task_obj_id, "body", ObjType::Text)?;
 
@@ -98,7 +94,11 @@ impl Database {
 
     pub fn list_tasks<'a>(&'a self) -> anyhow::Result<Vec<Task<'a>>> {
         let doc = self.doc.lock().unwrap();
-        let values = doc.values(&self.tasks_id);
+        let (_, tasks_id) = doc
+            .get(automerge::ROOT, "tasks")?
+            .ok_or(anyhow!("Missing tasks"))?;
+
+        let values = doc.values(tasks_id);
         Ok(values
             .into_iter()
             .map(|(_, task_obj_id)| Task {
