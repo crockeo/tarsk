@@ -9,8 +9,10 @@ use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::thread;
+use std::time::Duration;
 
 use crate::database::Database;
+use crate::logging;
 use crate::serialization;
 
 pub struct Controller {
@@ -67,8 +69,9 @@ impl Controller {
 
     fn serve_thread(self: Arc<Self>) {
         loop {
-            // TODO: log errors when we make logging...
-            let _ = self.serve();
+            if let Err(e) = self.serve() {
+                let _ = logging::GLOBAL.log(&format!("Error while serving: {}", e));
+            }
         }
     }
 
@@ -89,15 +92,27 @@ impl Controller {
 
     fn pull_thread(self: Arc<Self>) {
         loop {
-            // TODO: log errors here too
-            let _ = self.pull();
+            if let Err(e) = self.pull() {
+		// TODO: make this less ugly whenever this feature becomes stable?
+                if let Some(e) = e.downcast_ref::<std::io::Error>() {
+		    if e.kind() == std::io::ErrorKind::ConnectionRefused {
+			continue
+		    }
+		}
+
+                let _ = logging::GLOBAL.log(&format!("Error while pulling: {}", e));
+            }
         }
     }
 
     fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let mut stream = TcpStream::connect(self.peer)?;
 
-        let heads = self.database.get_heads();
+        let timeout = Some(Duration::from_secs(1));
+        stream.set_read_timeout(timeout)?;
+        stream.set_write_timeout(timeout)?;
+
+        let heads = &self.database.get_heads()[1..];
         let serialized_heads = serialization::serialize_change_hashes(&heads);
         stream.write_all(&serialized_heads)?;
 
@@ -109,13 +124,17 @@ impl Controller {
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Pull);
         self.has_event.notify_one();
+
+        let _ = logging::GLOBAL.log("Successfully pulled!");
+
         Ok(())
     }
 
     fn poll_terminal_thread(self: Arc<Self>) {
         loop {
-            // TODO: errors!
-            let _ = self.poll_terminal();
+            if let Err(e) = self.poll_terminal() {
+                let _ = logging::GLOBAL.log(&format!("Error while polling: {}", e));
+            }
         }
     }
 

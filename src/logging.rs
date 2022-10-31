@@ -1,1 +1,32 @@
 // TODO: implement logging!
+use std::env::args;
+use std::fs::File;
+use std::io::Write;
+use std::sync::Mutex;
+
+use lazy_static::lazy_static;
+
+pub struct Logger {
+    file: Mutex<File>,
+}
+
+impl Logger {
+    pub fn new() -> anyhow::Result<Self> {
+        let args: Vec<String> = args().into_iter().collect();
+        let filename = format!("log-{}-{}.txt", args[1], args[2]);
+        Ok(Self {
+            file: Mutex::new(File::create(filename)?),
+        })
+    }
+
+    pub fn log<S: AsRef<str>>(&self, line: S) -> anyhow::Result<()> {
+        let mut file = self.file.lock().unwrap();
+        file.write(line.as_ref().as_bytes())?;
+        file.write("\n".as_bytes())?;
+        Ok(())
+    }
+}
+
+lazy_static! {
+    pub static ref GLOBAL: Logger = Logger::new().unwrap();
+}
