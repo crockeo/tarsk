@@ -27,6 +27,7 @@ use tui::Terminal;
 mod database;
 mod logging;
 mod serialization;
+mod server;
 
 // logging! :)
 lazy_static! {
