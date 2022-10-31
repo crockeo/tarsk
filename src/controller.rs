@@ -12,9 +12,12 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
+use automerge::Change;
+use automerge::ChangeHash;
+use automerge::ExpandedChange;
+
 use crate::database::Database;
 use crate::logging;
-use crate::serialization;
 
 pub struct Controller {
     database: Arc<Database>,
@@ -84,11 +87,11 @@ impl Controller {
         // we receive from a client all of their latest changes (their heads)
         let mut raw_heads = Vec::new();
         reader.read_until(b'\n', &mut raw_heads)?;
-        let heads = serialization::deserialize_change_hashes(&raw_heads)?;
+        let heads = deserialize_change_hashes(&raw_heads)?;
 
         // we give them back our set of changes after those heads
         let changes = self.database.get_changes(&heads)?;
-        let serialized_changes = serialization::serialize_changes(&changes)?;
+        let serialized_changes = serialize_changes(&changes)?;
         stream.write_all(&serialized_changes)?;
 
         Ok(())
@@ -115,13 +118,13 @@ impl Controller {
         let mut reader = BufReader::new(stream.try_clone()?);
 
         let heads = self.database.get_heads();
-        let raw_heads = serialization::serialize_change_hashes(&heads[1..])?;
+        let raw_heads = serialize_change_hashes(&heads[1..])?;
         stream.write_all(&raw_heads)?;
         stream.write_all(b"\n")?;
 
         let mut raw_changes = Vec::new();
         reader.read_until(b'\n', &mut raw_changes)?;
-        let changes = serialization::deserialize_changes(&raw_changes)?;
+        let changes = deserialize_changes(&raw_changes)?;
 
         self.database.apply_changes(changes)?;
 
@@ -153,4 +156,72 @@ impl Controller {
 pub enum Event {
     Pull,
     Terminal(crossterm::event::Event),
+}
+
+pub fn serialize_change_hashes(hashes: &[ChangeHash]) -> anyhow::Result<Vec<u8>> {
+    let serialized = serde_json::to_string(hashes)?;
+    Ok(serialized.into_bytes())
+}
+
+pub fn deserialize_change_hashes(bytes: &[u8]) -> anyhow::Result<Vec<ChangeHash>> {
+    let serialized = std::str::from_utf8(bytes)?;
+    let hashes: Vec<ChangeHash> = serde_json::from_str(serialized)?;
+    Ok(hashes)
+}
+
+pub fn serialize_changes(changes: &[Change]) -> anyhow::Result<Vec<u8>> {
+    let serialized = serde_json::to_string(
+        &changes
+            .iter()
+            .map(|change| change.decode())
+            .collect::<Vec<ExpandedChange>>(),
+    )?;
+    Ok(serialized.into_bytes())
+}
+
+pub fn deserialize_changes(bytes: &[u8]) -> anyhow::Result<Vec<Change>> {
+    let serialized = std::str::from_utf8(bytes)?;
+    let changes = serde_json::from_str::<Vec<ExpandedChange>>(serialized)?;
+    Ok(changes.into_iter().map(ExpandedChange::into).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use automerge::transaction::Transactable;
+    use automerge::AutoCommit;
+
+    use super::*;
+
+    #[test]
+    fn test_change_hashes_roundtrip() {
+        let change_hashes = vec![ChangeHash([0; 32])];
+        let raw = serialize_change_hashes(&change_hashes).unwrap();
+        let deserialized_change_hashes = deserialize_change_hashes(&raw);
+        assert!(deserialized_change_hashes.is_ok());
+        assert_eq!(change_hashes, deserialized_change_hashes.unwrap());
+    }
+
+    #[test]
+    fn test_change_roundtrip() {
+        let mut doc = AutoCommit::new();
+        _ = doc.put(automerge::ROOT, "number", 1234);
+
+        let changes: Vec<automerge::Change> = doc
+            .get_changes(&[])
+            .unwrap()
+            .into_iter()
+            .map(automerge::Change::clone)
+            .collect();
+
+        let raw = serialize_changes(&changes).unwrap();
+        let deserialized_changes = deserialize_changes(&raw);
+        assert!(deserialized_changes.is_ok());
+        assert_eq!(
+            changes
+                .into_iter()
+                .map(|change| change.clone())
+                .collect::<Vec<Change>>(),
+            deserialized_changes.unwrap()
+        );
+    }
 }

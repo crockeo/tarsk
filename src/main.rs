@@ -20,7 +20,6 @@ use crate::database::TaskImage;
 mod controller;
 mod database;
 mod logging;
-mod serialization;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().into_iter().collect();
