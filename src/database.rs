@@ -8,6 +8,8 @@ use anyhow::anyhow;
 use automerge::transaction::Transactable;
 use automerge::ActorId;
 use automerge::AutoCommit;
+use automerge::Change;
+use automerge::ChangeHash;
 use automerge::ObjId;
 use automerge::ObjType;
 use chrono::NaiveDate;
@@ -33,7 +35,7 @@ impl Database {
         let mut contents = Vec::new();
         file.read_to_end(&mut contents)?;
 
-	Self::from_bytes(&contents)
+        Self::from_bytes(&contents)
     }
 
     pub fn save<P: AsRef<Path>>(&self, path: &Path) -> anyhow::Result<()> {
@@ -57,6 +59,28 @@ impl Database {
     fn to_bytes(&self) -> Vec<u8> {
         let mut doc = self.doc.lock().unwrap();
         doc.save()
+    }
+
+    pub fn get_heads(&self) -> Vec<ChangeHash> {
+        let mut doc = self.doc.lock().unwrap();
+        doc.get_heads()
+    }
+
+    pub fn get_changes(&self, heads: &[ChangeHash]) -> anyhow::Result<Vec<Change>> {
+        // TODO: see if there's a good way to do this without cloning everything?
+        let mut doc = self.doc.lock().unwrap();
+        let changes = doc
+            .get_changes(heads)?
+            .into_iter()
+            .map(Change::clone)
+            .collect();
+        Ok(changes)
+    }
+
+    pub fn apply_changes<T: IntoIterator<Item = Change>>(&self, changes: T) -> anyhow::Result<()> {
+        let mut doc = self.doc.lock().unwrap();
+        doc.apply_changes(changes)?;
+        Ok(())
     }
 
     pub fn add_task<'a>(&'a self) -> anyhow::Result<Task<'a>> {
@@ -184,14 +208,14 @@ mod tests {
 
     #[test]
     fn test_list_tasks() {
-	let database = Database::new().unwrap();
-	let task = database.add_task().unwrap();
-	task.splice_title(0, 0, "some text").unwrap();
+        let database = Database::new().unwrap();
+        let task = database.add_task().unwrap();
+        task.splice_title(0, 0, "some text").unwrap();
 
-	let tasks = database.list_tasks().unwrap();
-	assert_eq!(tasks.len(), 1);
-	let task = &tasks[0];
-	assert_eq!(task.title().unwrap(), "some text");
+        let tasks = database.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.title().unwrap(), "some text");
     }
 
     #[test]
@@ -214,17 +238,17 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-	let bytes = {
-	    let doc = Database::new().unwrap();
-	    let task = doc.add_task().unwrap();
-	    task.splice_title(0, 0, "hello world").unwrap();
-	    doc.to_bytes()
-	};
+        let bytes = {
+            let doc = Database::new().unwrap();
+            let task = doc.add_task().unwrap();
+            task.splice_title(0, 0, "hello world").unwrap();
+            doc.to_bytes()
+        };
 
-	let doc = Database::from_bytes(&bytes).unwrap();
-	let tasks = doc.list_tasks().unwrap();
-	assert_eq!(tasks.len(), 1);
-	let task = &tasks[0];
-	assert_eq!(task.title().unwrap(), "hello world");
+        let doc = Database::from_bytes(&bytes).unwrap();
+        let tasks = doc.list_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        let task = &tasks[0];
+        assert_eq!(task.title().unwrap(), "hello world");
     }
 }
