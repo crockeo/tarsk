@@ -7,6 +7,9 @@ use crossterm::event::KeyModifiers;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
 use tui::backend::CrosstermBackend;
+use tui::layout::Constraint;
+use tui::layout::Direction;
+use tui::layout::Layout;
 use tui::widgets::Block;
 use tui::widgets::Borders;
 use tui::widgets::Paragraph;
@@ -34,6 +37,7 @@ fn main() -> anyhow::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    let task_index: usize = 0;
     loop {
         let tasks: Vec<TaskImage> = db
             .list_tasks()?
@@ -41,11 +45,29 @@ fn main() -> anyhow::Result<()> {
             .flat_map(|task| task.image())
             .collect();
 
+        let (current_title, current_contents) = if let Some(current_task) = tasks.get(task_index) {
+            (current_task.title.as_str(), current_task.body.as_str())
+        } else {
+            ("No Task", "")
+        };
+
         terminal.draw(|f| {
-            let size = f.size();
-            let paragraph = Paragraph::new(tasks.len().to_string())
-                .block(Block::default().title("Contents").borders(Borders::ALL));
-            f.render_widget(paragraph, size);
+            let chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
+                .split(f.size());
+
+            let task_list = Paragraph::new("hello world").block(
+                Block::default()
+                    .title(format!("Tasks ({})", tasks.len()))
+                    .borders(Borders::ALL),
+            );
+
+            let task_body = Paragraph::new(current_contents)
+                .block(Block::default().title(current_title).borders(Borders::ALL));
+
+            f.render_widget(task_list, chunks[0]);
+            f.render_widget(task_body, chunks[1]);
         });
 
         match controller.get_event() {
@@ -54,9 +76,9 @@ fn main() -> anyhow::Result<()> {
                     break;
                 }
 
-		if key.code == KeyCode::Char('a') {
-		    db.add_task()?;
-		}
+                if key.code == KeyCode::Char('a') {
+                    db.add_task()?;
+                }
             }
             _ => {}
         }
