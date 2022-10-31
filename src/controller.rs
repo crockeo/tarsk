@@ -127,15 +127,15 @@ impl Controller {
         reader.read_until(b'\n', &mut raw_changes)?;
         let changes = serialization::deserialize_changes(&raw_changes)?;
 
-	logging::GLOBAL.debug("PULL  Applying changes...");
+        logging::GLOBAL.debug("PULL  Applying changes...");
         self.database.apply_changes(changes)?;
 
-	logging::GLOBAL.debug("PULL  Pull event...");
+        logging::GLOBAL.debug("PULL  Pull event...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Pull);
         self.has_event.notify_one();
 
-	logging::GLOBAL.debug("PULL  Done!");
+        logging::GLOBAL.debug("PULL  Done!");
         Ok(())
     }
 
@@ -150,7 +150,7 @@ impl Controller {
     fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
         let evt = crossterm::event::read()?;
 
-	logging::GLOBAL.debug("POLL  Got event! Publishing...");
+        logging::GLOBAL.debug("POLL  Got event! Publishing...");
         let mut event_queue = self.event_queue.lock().unwrap();
         event_queue.push_back(Event::Terminal(evt));
         self.has_event.notify_one();

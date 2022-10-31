@@ -21,16 +21,16 @@ impl Logger {
 
     fn log<S: AsRef<str>>(&self, level: &'static str, line: S) {
         let mut file = self.file.lock().unwrap();
-	let _ = file.write(format!("{} {}\n", level, line.as_ref()).as_bytes());
+        let _ = file.write(format!("{} {}\n", level, line.as_ref()).as_bytes());
     }
 
     pub fn debug<S: AsRef<str>>(&self, line: S) {
-	// NOTE: uncomment to do print debugging
-	// self.log("DEBUG", line)
+        // NOTE: uncomment to do print debugging
+        // self.log("DEBUG", line)
     }
 
     pub fn error<S: AsRef<str>>(&self, line: S) {
-	self.log("ERROR", line)
+        self.log("ERROR", line)
     }
 }
 
