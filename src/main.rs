@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
     //   - how would one make this more efficient? e.g. debouncing edits to tasks
     //     - maybe look into a version of the db which doesn't autocommit
     //       to have more fine-grained control over this?
-    let task_index: usize = 0;
+    let mut state = State::new();
     loop {
         let tasks: Vec<TaskImage> = db
             .list_tasks()?
@@ -61,11 +61,12 @@ fn main() -> anyhow::Result<()> {
             .flat_map(|task| task.image())
             .collect();
 
-        let (current_title, current_contents) = if let Some(current_task) = tasks.get(task_index) {
-            (current_task.title.as_str(), current_task.body.as_str())
-        } else {
-            ("No Task", "")
-        };
+        let (current_title, current_contents) =
+            if let Some(current_task) = tasks.get(state.current_task) {
+                (current_task.title.as_str(), current_task.body.as_str())
+            } else {
+                ("No Task", "")
+            };
 
         terminal.draw(|f| {
             let chunks = Layout::default()
@@ -78,24 +79,52 @@ fn main() -> anyhow::Result<()> {
                 .constraints([Constraint::Length(3), Constraint::Percentage(100)].as_ref())
                 .split(chunks[1]);
 
-	    let task_list_chunk = chunks[0];
-	    let title_chunk = right_chunks[0];
-	    let body_chunk = right_chunks[1];
+            let task_list_chunk = chunks[0];
+            let title_chunk = right_chunks[0];
+            let body_chunk = right_chunks[1];
 
             let task_list = Paragraph::new("hello world").block(
                 Block::default()
-                    .title(format!("Tasks ({})", tasks.len()))
+                    .title(format!(
+                        "{}Tasks ({})",
+                        if state.mode == EditMode::List {
+                            "* "
+                        } else {
+                            ""
+                        },
+                        tasks.len()
+                    ))
                     .borders(Borders::ALL),
             );
 
-	    let task_title = Paragraph::new(current_title)
-		.block(Block::default().borders(Borders::ALL));
+            let task_title = Paragraph::new(current_title).block(
+                Block::default()
+                    .title(format!(
+                        "{}Title",
+                        if state.mode == EditMode::Title {
+                            "* "
+                        } else {
+                            ""
+                        }
+                    ))
+                    .borders(Borders::ALL),
+            );
 
-            let task_body = Paragraph::new(current_contents)
-                .block(Block::default().title(current_title).borders(Borders::ALL));
+            let task_body = Paragraph::new(current_contents).block(
+                Block::default()
+                    .title(format!(
+                        "{}Body",
+                        if state.mode == EditMode::Body {
+                            "* "
+                        } else {
+                            ""
+                        }
+                    ))
+                    .borders(Borders::ALL),
+            );
 
             f.render_widget(task_list, task_list_chunk);
-	    f.render_widget(task_title, title_chunk);
+            f.render_widget(task_title, title_chunk);
             f.render_widget(task_body, body_chunk);
         })?;
 
@@ -116,4 +145,45 @@ fn main() -> anyhow::Result<()> {
     disable_raw_mode()?;
 
     Ok(())
+}
+
+struct State {
+    current_task: usize,
+    mode: EditMode,
+}
+
+impl State {
+    fn new() -> Self {
+        Self {
+            current_task: 0,
+            mode: EditMode::List,
+        }
+    }
+}
+
+#[derive(Eq, PartialEq)]
+enum EditMode {
+    List,
+    Title,
+    Body,
+}
+
+impl EditMode {
+    fn next(&self) -> EditMode {
+        use EditMode::*;
+        match self {
+            List => Title,
+            Title => Body,
+            Body => List,
+        }
+    }
+
+    fn prev(&self) -> EditMode {
+        use EditMode::*;
+        match self {
+            List => Body,
+            Title => List,
+            Body => Title,
+        }
+    }
 }
