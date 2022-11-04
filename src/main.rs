@@ -15,6 +15,7 @@ use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
 
+use crate::database::Task;
 use crate::database::TaskImage;
 
 mod controller;
@@ -128,18 +129,13 @@ fn main() -> anyhow::Result<()> {
             f.render_widget(task_body, body_chunk);
         })?;
 
-        match controller.get_event() {
-            controller::Event::Terminal(Event::Key(key)) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                    break;
-                }
-
-                if key.code == KeyCode::Char('a') {
-                    db.add_task()?;
-                }
+        let event = controller.get_event();
+        if let controller::Event::Terminal(Event::Key(key)) = event {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                break;
             }
-            _ => {}
         }
+        state = state.handle_event(&db, event)?;
     }
 
     disable_raw_mode()?;
@@ -158,6 +154,26 @@ impl State {
             current_task: 0,
             mode: EditMode::List,
         }
+    }
+
+    fn handle_event(
+        mut self,
+        db: &database::Database,
+        event: controller::Event,
+    ) -> anyhow::Result<Self> {
+        if let controller::Event::Terminal(Event::Key(key)) = event {
+            if key.code == KeyCode::BackTab {
+                self.mode = self.mode.prev();
+            } else if key.code == KeyCode::Tab {
+                self.mode = self.mode.next();
+            }
+
+            if key.code == KeyCode::Char('a') {
+                db.add_task()?;
+            }
+        }
+
+        Ok(self)
     }
 }
 
@@ -185,5 +201,17 @@ impl EditMode {
             Title => List,
             Body => Title,
         }
+    }
+
+    fn handle_event_list(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn handle_event_title(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn handle_event_body(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
+        todo!()
     }
 }
