@@ -73,17 +73,30 @@ fn main() -> anyhow::Result<()> {
                 .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
                 .split(f.size());
 
+            let right_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3), Constraint::Percentage(100)].as_ref())
+                .split(chunks[1]);
+
+	    let task_list_chunk = chunks[0];
+	    let title_chunk = right_chunks[0];
+	    let body_chunk = right_chunks[1];
+
             let task_list = Paragraph::new("hello world").block(
                 Block::default()
                     .title(format!("Tasks ({})", tasks.len()))
                     .borders(Borders::ALL),
             );
 
+	    let task_title = Paragraph::new(current_title)
+		.block(Block::default().borders(Borders::ALL));
+
             let task_body = Paragraph::new(current_contents)
                 .block(Block::default().title(current_title).borders(Borders::ALL));
 
-            f.render_widget(task_list, chunks[0]);
-            f.render_widget(task_body, chunks[1]);
+            f.render_widget(task_list, task_list_chunk);
+	    f.render_widget(task_title, title_chunk);
+            f.render_widget(task_body, body_chunk);
         })?;
 
         match controller.get_event() {
