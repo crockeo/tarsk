@@ -169,7 +169,7 @@ impl State {
                 self.mode = self.mode.next();
             }
 
-	    self.mode.handle_event(db, key)?;
+	    self.mode.handle_event(&mut self, db, key)?;
         }
 
 	Ok(self)
@@ -202,24 +202,24 @@ impl EditMode {
         }
     }
 
-    fn handle_event(&self, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+    fn handle_event(&self, state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
 	use EditMode::*;
 	match self {
-	    List => EditMode::handle_event_list(db, event),
-	    Title => EditMode::handle_event_title(db, event),
-	    Body => EditMode::handle_event_body(db, event),
+	    List => EditMode::handle_event_list(state, db, event),
+	    Title => EditMode::handle_event_title(state, db, event),
+	    Body => EditMode::handle_event_body(state, db, event),
 	}
     }
 
-    fn handle_event_list(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+    fn handle_event_list(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
 	Ok(())
     }
 
-    fn handle_event_title(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+    fn handle_event_title(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
 	Ok(())
     }
 
-    fn handle_event_body(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+    fn handle_event_body(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
 	Ok(())
     }
 }
