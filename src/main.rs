@@ -16,7 +16,6 @@ use tui::widgets::Borders;
 use tui::widgets::Paragraph;
 use tui::Terminal;
 
-use crate::database::Task;
 use crate::database::TaskImage;
 
 mod controller;
@@ -169,10 +168,12 @@ impl State {
                 self.mode = self.mode.next();
             }
 
-	    self.mode.handle_event(&mut self, db, key)?;
+            // TODO: i hate that this has to have a heap allocation every call :(
+            let handler = self.mode.handler();
+            handler(&mut self, db, key)?;
         }
 
-	Ok(self)
+        Ok(self)
     }
 }
 
@@ -182,6 +183,8 @@ enum EditMode {
     Title,
     Body,
 }
+
+type Handler = dyn Fn(&mut State, &database::Database, KeyEvent) -> anyhow::Result<()>;
 
 impl EditMode {
     fn next(&self) -> EditMode {
@@ -202,24 +205,36 @@ impl EditMode {
         }
     }
 
-    fn handle_event(&self, state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
-	use EditMode::*;
-	match self {
-	    List => EditMode::handle_event_list(state, db, event),
-	    Title => EditMode::handle_event_title(state, db, event),
-	    Body => EditMode::handle_event_body(state, db, event),
-	}
+    fn handler(&self) -> Box<Handler> {
+        use EditMode::*;
+        Box::new(match self {
+            List => EditMode::handle_event_list,
+            Title => EditMode::handle_event_title,
+            Body => EditMode::handle_event_body,
+        })
     }
 
-    fn handle_event_list(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
-	Ok(())
+    fn handle_event_list(
+        _state: &mut State,
+        _db: &database::Database,
+        _event: KeyEvent,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
-    fn handle_event_title(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
-	Ok(())
+    fn handle_event_title(
+        _state: &mut State,
+        _db: &database::Database,
+        _event: KeyEvent,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 
-    fn handle_event_body(state: &mut State, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
-	Ok(())
+    fn handle_event_body(
+        _state: &mut State,
+        _db: &database::Database,
+        _event: KeyEvent,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }

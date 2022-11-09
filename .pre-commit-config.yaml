@@ -1,6 +1,13 @@
 repos:
 -   repo: local
     hooks:
+    # -   id: cargo-clippy
+    #     name: rust clippy
+    #     language: system
+    #     entry: cargo clippy -- -Dwarnings
+    #     types: [rust]
+    #     pass_filenames: false
+    #     args: []
     -   id: cargo-fmt
         name: rust autoformatting
         language: system
