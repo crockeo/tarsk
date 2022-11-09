@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crossterm::event::Event;
 use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use crossterm::terminal::disable_raw_mode;
 use crossterm::terminal::enable_raw_mode;
@@ -168,12 +169,10 @@ impl State {
                 self.mode = self.mode.next();
             }
 
-            if key.code == KeyCode::Char('a') {
-                db.add_task()?;
-            }
+	    self.mode.handle_event(db, key)?;
         }
 
-        Ok(self)
+	Ok(self)
     }
 }
 
@@ -203,15 +202,24 @@ impl EditMode {
         }
     }
 
-    fn handle_event_list(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
-        todo!()
+    fn handle_event(&self, db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+	use EditMode::*;
+	match self {
+	    List => EditMode::handle_event_list(db, event),
+	    Title => EditMode::handle_event_title(db, event),
+	    Body => EditMode::handle_event_body(db, event),
+	}
     }
 
-    fn handle_event_title(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
-        todo!()
+    fn handle_event_list(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+	Ok(())
     }
 
-    fn handle_event_body(db: &database::Database, event: controller::Event) -> anyhow::Result<()> {
-        todo!()
+    fn handle_event_title(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+	Ok(())
+    }
+
+    fn handle_event_body(db: &database::Database, event: KeyEvent) -> anyhow::Result<()> {
+	Ok(())
     }
 }
