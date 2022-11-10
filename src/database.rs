@@ -36,6 +36,8 @@ impl Database {
         Self::from_bytes(&contents)
     }
 
+    // TODO: if the file path's parent directory doesn't exist
+    // it won't create the parent directory :(
     pub fn save<P: AsRef<Path>>(&self, path: &Path) -> anyhow::Result<()> {
         let mut file = File::create(path)?;
         file.write_all(&self.to_bytes())?;

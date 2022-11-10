@@ -1,4 +1,6 @@
+use std::env;
 use std::panic;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -23,21 +25,33 @@ mod controller;
 mod database;
 mod logging;
 
+fn get_database_path() -> anyhow::Result<PathBuf> {
+    let home_dir = PathBuf::from_str(&env::var("HOME")?)?;
+    Ok(home_dir.join(".cache").join("tarsk.db"))
+}
+
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().into_iter().collect();
     let our_port = u16::from_str(&args[1])?;
     let their_port = u16::from_str(&args[2])?;
 
-    let db = Arc::new(database::Database::new()?);
+    let db_path = get_database_path()?;
+    let db = Arc::new(match database::Database::load(db_path) {
+        Ok(db) => db,
+        Err(_) => database::Database::new()?,
+    });
     let controller = controller::Controller::new(db.clone(), our_port, their_port).await?;
 
     // This lets us re-establish normal terminal function when we panic! Nice!
-    let handler = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        let _ = disable_raw_mode();
-        handler(panic_info)
-    }));
+    {
+        let handler = panic::take_hook();
+        db.save::<&PathBuf>(&get_database_path()?)?;
+        panic::set_hook(Box::new(move |panic_info| {
+            let _ = disable_raw_mode();
+            handler(panic_info)
+        }));
+    }
 
     print!("{}[2J", 27 as char);
 
@@ -166,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     disable_raw_mode()?;
+    db.save::<&PathBuf>(&get_database_path()?)?;
 
     Ok(())
 }
