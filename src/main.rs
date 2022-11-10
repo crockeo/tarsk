@@ -23,7 +23,8 @@ mod controller;
 mod database;
 mod logging;
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main()]
+async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().into_iter().collect();
     let our_port = u16::from_str(&args[1])?;
     let their_port = u16::from_str(&args[2])?;
@@ -156,7 +157,7 @@ fn main() -> anyhow::Result<()> {
             f.render_widget(task_body, body_chunk);
         })?;
 
-        let event = controller.get_event();
+        let event = controller.get_event().await;
         if let controller::Event::Terminal(Event::Key(key)) = event {
             if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
                 break;

@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::io::BufRead;
 use std::io::BufReader;
 use std::io::Write;
@@ -7,10 +6,11 @@ use std::net::TcpListener;
 use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::Condvar;
-use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
+
+use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 
 use automerge::Change;
 use automerge::ChangeHash;
@@ -25,8 +25,8 @@ pub struct Controller {
     listener: TcpListener,
     peer: SocketAddr,
 
-    event_queue: Mutex<VecDeque<Event>>,
-    has_event: Condvar,
+    tx: mpsc::UnboundedSender<Event>,
+    rx: Mutex<mpsc::UnboundedReceiver<Event>>,
 }
 
 impl Controller {
@@ -37,50 +37,49 @@ impl Controller {
     ) -> anyhow::Result<Arc<Self>> {
         let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port))?;
         let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
+
+        let (tx, rx) = mpsc::unbounded_channel();
         let server = Arc::new(Self {
             database,
             listener,
             peer,
-            event_queue: Mutex::new(VecDeque::new()),
-            has_event: Condvar::new(),
+            tx,
+            rx: Mutex::new(rx),
         });
 
         {
             let server = server.clone();
-            thread::spawn(move || server.serve_thread());
+            tokio::spawn(server.serve_thread());
         }
 
         {
             let server = server.clone();
-            thread::spawn(move || server.pull_thread());
+            tokio::spawn(server.pull_thread());
         }
 
         {
             let server = server.clone();
-            thread::spawn(move || server.poll_terminal_thread());
+            tokio::spawn(server.poll_terminal_thread());
         }
 
         Ok(server)
     }
 
-    pub fn get_event(self: &Arc<Self>) -> Event {
-        let mut event_queue = self.event_queue.lock().unwrap();
-        while event_queue.len() == 0 {
-            event_queue = self.has_event.wait(event_queue).unwrap();
-        }
-        event_queue.pop_front().unwrap()
+    pub async fn get_event(self: &Arc<Self>) -> Event {
+        let mut rx = self.rx.lock().await;
+        rx.recv().await.expect("Failed to poll event.")
     }
 
-    fn serve_thread(self: Arc<Self>) {
+    async fn serve_thread(self: Arc<Self>) {
         loop {
-            if let Err(e) = self.serve() {
+            if let Err(e) = self.serve().await {
                 logging::GLOBAL.error(&format!("Error while serving: {}", e));
             }
             thread::sleep(Duration::from_millis(1000));
         }
     }
 
-    fn serve(self: &Arc<Self>) -> anyhow::Result<()> {
+    async fn serve(self: &Arc<Self>) -> anyhow::Result<()> {
         let (mut stream, _) = self.listener.accept()?;
         let mut reader = BufReader::new(stream.try_clone()?);
 
@@ -97,9 +96,9 @@ impl Controller {
         Ok(())
     }
 
-    fn pull_thread(self: Arc<Self>) {
+    async fn pull_thread(self: Arc<Self>) {
         loop {
-            if let Err(e) = self.pull() {
+            if let Err(e) = self.pull().await {
                 // TODO: make this less ugly whenever this feature becomes stable?
                 if let Some(e) = e.downcast_ref::<std::io::Error>() {
                     if e.kind() == std::io::ErrorKind::ConnectionRefused {
@@ -113,7 +112,7 @@ impl Controller {
         }
     }
 
-    fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
+    async fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
         let mut stream = TcpStream::connect(self.peer)?;
         let mut reader = BufReader::new(stream.try_clone()?);
 
@@ -128,31 +127,28 @@ impl Controller {
 
         self.database.apply_changes(changes)?;
 
-        let mut event_queue = self.event_queue.lock().unwrap();
-        event_queue.push_back(Event::Pull);
-        self.has_event.notify_one();
+        self.tx.send(Event::Pull)?;
 
         Ok(())
     }
 
-    fn poll_terminal_thread(self: Arc<Self>) {
+    async fn poll_terminal_thread(self: Arc<Self>) {
         loop {
-            if let Err(e) = self.poll_terminal() {
+            if let Err(e) = self.poll_terminal().await {
                 logging::GLOBAL.error(&format!("Error while polling: {}", e));
             }
         }
     }
 
-    fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
+    async fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
         let evt = crossterm::event::read()?;
 
-        let mut event_queue = self.event_queue.lock().unwrap();
-        event_queue.push_back(Event::Terminal(evt));
-        self.has_event.notify_one();
+        self.tx.send(Event::Terminal(evt))?;
         Ok(())
     }
 }
 
+#[derive(Debug)]
 pub enum Event {
     Pull,
     Terminal(crossterm::event::Event),
