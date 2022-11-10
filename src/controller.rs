@@ -62,8 +62,11 @@ impl Controller {
         }
 
         {
+            // This is handled on its own operating system thread
+            // because waiting for terminal input is not async.
+            // If it were a normal async task it could freeze the event hub.
             let server = server.clone();
-            tokio::spawn(server.poll_terminal_thread());
+            thread::spawn(|| server.poll_terminal_thread());
         }
 
         Ok(server)
@@ -138,15 +141,15 @@ impl Controller {
         Ok(())
     }
 
-    async fn poll_terminal_thread(self: Arc<Self>) {
+    fn poll_terminal_thread(self: Arc<Self>) {
         loop {
-            if let Err(e) = self.poll_terminal().await {
+            if let Err(e) = self.poll_terminal() {
                 logging::GLOBAL.error(&format!("Error while polling: {}", e));
             }
         }
     }
 
-    async fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
+    fn poll_terminal(self: &Arc<Self>) -> anyhow::Result<()> {
         let evt = crossterm::event::read()?;
 
         self.tx.send(Event::Terminal(evt))?;
