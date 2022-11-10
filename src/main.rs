@@ -62,6 +62,25 @@ fn main() -> anyhow::Result<()> {
             .flat_map(|task| task.image())
             .collect();
 
+        let task_titles = (&tasks)
+            .into_iter()
+            .enumerate()
+            .map(|(i, task)| {
+                let mut title = task.title.as_str();
+                if title == "" {
+                    title = "(No Title)";
+                }
+
+                let rendered_title = if i == state.current_task {
+                    format!("> {}", title)
+                } else {
+                    format!("  {}", title)
+                };
+                rendered_title
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+
         let (current_title, current_contents) =
             if let Some(current_task) = tasks.get(state.current_task) {
                 (current_task.title.as_str(), current_task.body.as_str())
@@ -84,7 +103,7 @@ fn main() -> anyhow::Result<()> {
             let title_chunk = right_chunks[0];
             let body_chunk = right_chunks[1];
 
-            let task_list = Paragraph::new("hello world").block(
+            let task_list = Paragraph::new(task_titles).block(
                 Block::default()
                     .title(format!(
                         "{}Tasks ({})",
