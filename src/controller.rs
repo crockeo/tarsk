@@ -1,14 +1,18 @@
-use std::io::BufRead;
-use std::io::BufReader;
-use std::io::Write;
+use std::io::Read;
 use std::net::SocketAddr;
-use std::net::TcpListener;
-use std::net::TcpStream;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use tokio::io::AsyncBufRead;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
@@ -30,12 +34,12 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(
+    pub async fn new(
         database: Arc<Database>,
         our_port: u16,
         their_port: u16,
     ) -> anyhow::Result<Arc<Self>> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port))?;
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port)).await?;
         let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
 
         let (tx, rx) = mpsc::unbounded_channel();
@@ -80,18 +84,19 @@ impl Controller {
     }
 
     async fn serve(self: &Arc<Self>) -> anyhow::Result<()> {
-        let (mut stream, _) = self.listener.accept()?;
-        let mut reader = BufReader::new(stream.try_clone()?);
+        let (stream, _) = self.listener.accept().await?;
+        let (read_half, mut write_half) = stream.into_split();
 
         // we receive from a client all of their latest changes (their heads)
+        let mut reader = BufReader::new(read_half);
         let mut raw_heads = Vec::new();
-        reader.read_until(b'\n', &mut raw_heads)?;
+        reader.read_until(b'\n', &mut raw_heads).await?;
         let heads = deserialize_change_hashes(&raw_heads)?;
 
         // we give them back our set of changes after those heads
         let changes = self.database.get_changes(&heads)?;
         let serialized_changes = serialize_changes(&changes)?;
-        stream.write_all(&serialized_changes)?;
+        write_half.write_all(&serialized_changes).await?;
 
         Ok(())
     }
@@ -113,16 +118,17 @@ impl Controller {
     }
 
     async fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
-        let mut stream = TcpStream::connect(self.peer)?;
-        let mut reader = BufReader::new(stream.try_clone()?);
+        let stream = TcpStream::connect(self.peer).await?;
+        let (read_half, mut write_half) = stream.into_split();
 
         let heads = self.database.get_heads();
         let raw_heads = serialize_change_hashes(&heads[1..])?;
-        stream.write_all(&raw_heads)?;
-        stream.write_all(b"\n")?;
+        write_half.write_all(&raw_heads).await?;
+        write_half.write_all(b"\n").await?;
 
+        let mut reader = BufReader::new(read_half);
         let mut raw_changes = Vec::new();
-        reader.read_until(b'\n', &mut raw_changes)?;
+        reader.read_until(b'\n', &mut raw_changes).await?;
         let changes = deserialize_changes(&raw_changes)?;
 
         self.database.apply_changes(changes)?;

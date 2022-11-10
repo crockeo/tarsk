@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
     let their_port = u16::from_str(&args[2])?;
 
     let db = Arc::new(database::Database::new()?);
-    let controller = controller::Controller::new(db.clone(), our_port, their_port)?;
+    let controller = controller::Controller::new(db.clone(), our_port, their_port).await?;
 
     // This lets us re-establish normal terminal function when we panic! Nice!
     let handler = panic::take_hook();
