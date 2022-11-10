@@ -215,26 +215,79 @@ impl EditMode {
     }
 
     fn handle_event_list(
-        _state: &mut State,
-        _db: &database::Database,
-        _event: KeyEvent,
+        state: &mut State,
+        db: &database::Database,
+        event: KeyEvent,
     ) -> anyhow::Result<()> {
+        let tasks = db.list_tasks()?;
+
+        match event.code {
+            KeyCode::Up => {
+                if state.current_task != 0 {
+                    state.current_task -= 1;
+                }
+            }
+            KeyCode::Down => {
+                if state.current_task < tasks.len() - 1 {
+                    state.current_task += 1;
+                }
+            }
+            KeyCode::Char('a') => {
+                db.add_task()?;
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
     fn handle_event_title(
-        _state: &mut State,
-        _db: &database::Database,
-        _event: KeyEvent,
+        state: &mut State,
+        db: &database::Database,
+        event: KeyEvent,
     ) -> anyhow::Result<()> {
+        let tasks = db.list_tasks()?;
+        if state.current_task >= tasks.len() {
+            return Ok(());
+        }
+        let current_task = &tasks[state.current_task];
+        let current_task_title = current_task.title()?;
+
+        match event.code {
+            KeyCode::Char(c) => {
+                current_task.splice_title(current_task_title.len(), 0, c.to_string())?;
+            }
+            KeyCode::Backspace => {
+                current_task.splice_title(current_task_title.len() - 1, 1, "")?;
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 
     fn handle_event_body(
-        _state: &mut State,
-        _db: &database::Database,
-        _event: KeyEvent,
+        state: &mut State,
+        db: &database::Database,
+        event: KeyEvent,
     ) -> anyhow::Result<()> {
+        let tasks = db.list_tasks()?;
+        if state.current_task >= tasks.len() {
+            return Ok(());
+        }
+        let current_task = &tasks[state.current_task];
+        let current_task_body = current_task.body()?;
+
+        match event.code {
+            KeyCode::Char(c) => {
+                current_task.splice_body(current_task_body.len(), 0, c.to_string())?;
+            }
+            KeyCode::Backspace => {
+                current_task.splice_body(current_task_body.len() - 1, 1, "")?;
+            }
+            _ => {}
+        }
+
         Ok(())
     }
 }
