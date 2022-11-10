@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_change_roundtrip() {
         let mut doc = AutoCommit::new();
-        _ = doc.put(automerge::ROOT, "number", 1234);
+        let _ = doc.put(automerge::ROOT, "number", 1234);
 
         let changes: Vec<automerge::Change> = doc
             .get_changes(&[])
