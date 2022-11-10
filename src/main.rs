@@ -1,3 +1,4 @@
+use std::panic;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -29,6 +30,13 @@ fn main() -> anyhow::Result<()> {
 
     let db = Arc::new(database::Database::new()?);
     let controller = controller::Controller::new(db.clone(), our_port, their_port)?;
+
+    // This lets us re-establish normal terminal function when we panic! Nice!
+    let handler = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        let _ = disable_raw_mode();
+        handler(panic_info)
+    }));
 
     print!("{}[2J", 27 as char);
 
