@@ -1,14 +1,10 @@
-use std::io::Read;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncRead;
-use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::net::TcpListener;
@@ -221,12 +217,6 @@ mod tests {
         let raw = serialize_changes(&changes).unwrap();
         let deserialized_changes = deserialize_changes(&raw);
         assert!(deserialized_changes.is_ok());
-        assert_eq!(
-            changes
-                .into_iter()
-                .map(|change| change.clone())
-                .collect::<Vec<Change>>(),
-            deserialized_changes.unwrap()
-        );
+        assert_eq!(changes, deserialized_changes.unwrap());
     }
 }

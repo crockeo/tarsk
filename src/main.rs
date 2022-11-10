@@ -71,21 +71,20 @@ async fn main() -> anyhow::Result<()> {
             .flat_map(|task| task.image())
             .collect();
 
-        let task_titles = (&tasks)
-            .into_iter()
+        let task_titles = tasks
+            .iter()
             .enumerate()
             .map(|(i, task)| {
                 let mut title = task.title.as_str();
-                if title == "" {
+                if title.is_empty() {
                     title = "(No Title)";
                 }
 
-                let rendered_title = if i == state.current_task {
+                if i == state.current_task {
                     format!("> {}", title)
                 } else {
                     format!("  {}", title)
-                };
-                rendered_title
+                }
             })
             .collect::<Vec<String>>()
             .join("\n");

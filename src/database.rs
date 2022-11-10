@@ -43,7 +43,7 @@ impl Database {
     }
 
     fn from_bytes(bytes: &[u8]) -> anyhow::Result<Self> {
-        let doc = AutoCommit::load(&bytes)?;
+        let doc = AutoCommit::load(bytes)?;
         Ok(Self {
             doc: Mutex::new(doc),
         })
@@ -76,11 +76,11 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_task<'a>(&'a self) -> anyhow::Result<Task<'a>> {
+    pub fn add_task(&self) -> anyhow::Result<Task<'_>> {
         let mut doc = self.doc.lock().unwrap();
         let (_, tasks_id) = doc
             .get(automerge::ROOT, "tasks")?
-            .ok_or(anyhow!("Missing tasks"))?;
+            .ok_or_else(|| anyhow!("Missing tasks"))?;
 
         let task_obj_id = doc.insert_object(tasks_id, 0, ObjType::Map)?;
         doc.put_object(&task_obj_id, "title", ObjType::Text)?;
@@ -92,11 +92,11 @@ impl Database {
         })
     }
 
-    pub fn list_tasks<'a>(&'a self) -> anyhow::Result<Vec<Task<'a>>> {
+    pub fn list_tasks(&self) -> anyhow::Result<Vec<Task<'_>>> {
         let doc = self.doc.lock().unwrap();
         let (_, tasks_id) = doc
             .get(automerge::ROOT, "tasks")?
-            .ok_or(anyhow!("Missing tasks"))?;
+            .ok_or_else(|| anyhow!("Missing tasks"))?;
 
         let values = doc.values(tasks_id);
         Ok(values
@@ -119,11 +119,11 @@ impl<'a> Task<'a> {
         let doc = self.parent.doc.lock().unwrap();
         let (_, title_id) = doc
             .get(&self.task_obj_id, "title")?
-            .ok_or(anyhow!("Missing title"))?;
+            .ok_or_else(|| anyhow!("Missing title"))?;
 
         let (_, body_id) = doc
             .get(&self.task_obj_id, "body")?
-            .ok_or(anyhow!("Missing body"))?;
+            .ok_or_else(|| anyhow!("Missing body"))?;
 
         Ok(TaskImage {
             title: doc.text(title_id)?,
@@ -136,7 +136,7 @@ impl<'a> Task<'a> {
         let doc = self.parent.doc.lock().unwrap();
         let (_, title_id) = doc
             .get(&self.task_obj_id, "title")?
-            .ok_or(anyhow!("Missing title"))?;
+            .ok_or_else(|| anyhow!("Missing title"))?;
 
         Ok(doc.text(title_id)?)
     }
@@ -150,7 +150,7 @@ impl<'a> Task<'a> {
         let mut doc = self.parent.doc.lock().unwrap();
         let (_, title_id) = doc
             .get(&self.task_obj_id, "title")?
-            .ok_or(anyhow!("Missing title"))?;
+            .ok_or_else(|| anyhow!("Missing title"))?;
         doc.splice_text(title_id, pos, delete, contents.as_ref())?;
         Ok(())
     }
@@ -159,7 +159,7 @@ impl<'a> Task<'a> {
         let doc = self.parent.doc.lock().unwrap();
         let (_, body_id) = doc
             .get(&self.task_obj_id, "body")?
-            .ok_or(anyhow!("Missing body"))?;
+            .ok_or_else(|| anyhow!("Missing body"))?;
 
         Ok(doc.text(body_id)?)
     }
@@ -173,7 +173,7 @@ impl<'a> Task<'a> {
         let mut doc = self.parent.doc.lock().unwrap();
         let (_, body_id) = doc
             .get(&self.task_obj_id, "body")?
-            .ok_or(anyhow!("Missing body"))?;
+            .ok_or_else(|| anyhow!("Missing body"))?;
         doc.splice_text(body_id, pos, delete, contents.as_ref())?;
         Ok(())
     }
