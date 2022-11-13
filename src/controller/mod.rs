@@ -1,20 +1,13 @@
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::SocketAddrV4;
-use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 
 use automerge::Change;
 use automerge::ChangeHash;
 use automerge::ExpandedChange;
 use lazy_static::lazy_static;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
-use tokio::net::TcpListener;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
@@ -38,29 +31,20 @@ pub struct Controller {
     registry: Arc<Registry>,
     sync: Arc<Sync>,
 
-    listener: TcpListener,
-    peer: SocketAddr,
-
     tx: mpsc::UnboundedSender<Event>,
     rx: Mutex<mpsc::UnboundedReceiver<Event>>,
 }
 
 impl Controller {
-    pub async fn new(
-        database: Arc<Database>,
-        our_port: u16,
-        their_port: u16,
-    ) -> anyhow::Result<Arc<Self>> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", our_port)).await?;
-        let peer = SocketAddr::from_str(&format!("127.0.0.1:{}", their_port))?;
-
+    pub async fn new(database: Arc<Database>) -> anyhow::Result<Arc<Self>> {
         let (tx, rx) = mpsc::unbounded_channel();
+        let registry = Registry::new();
+        let sync = Sync::new(database.clone(), tx.clone());
+
         let server = Arc::new(Self {
-            database: database.clone(),
-            registry: Registry::new(),
-            sync: Sync::new(database.clone()),
-            listener,
-            peer,
+            database,
+            registry,
+            sync,
             tx,
             rx: Mutex::new(rx),
         });
@@ -73,16 +57,6 @@ impl Controller {
         {
             let sync = server.sync.clone();
             tokio::spawn(sync.start());
-        }
-
-        {
-            let server = server.clone();
-            tokio::spawn(server.serve_thread());
-        }
-
-        {
-            let server = server.clone();
-            tokio::spawn(server.pull_thread());
         }
 
         {
@@ -99,69 +73,6 @@ impl Controller {
     pub async fn get_event(self: &Arc<Self>) -> Event {
         let mut rx = self.rx.lock().await;
         rx.recv().await.expect("Failed to poll event.")
-    }
-
-    async fn serve_thread(self: Arc<Self>) {
-        loop {
-            if let Err(e) = self.serve().await {
-                logging::GLOBAL.error(&format!("Error while serving: {}", e));
-            }
-            thread::sleep(Duration::from_millis(1000));
-        }
-    }
-
-    async fn serve(self: &Arc<Self>) -> anyhow::Result<()> {
-        let (stream, _) = self.listener.accept().await?;
-        let (read_half, mut write_half) = stream.into_split();
-
-        // we receive from a client all of their latest changes (their heads)
-        let mut reader = BufReader::new(read_half);
-        let mut raw_heads = Vec::new();
-        reader.read_until(b'\n', &mut raw_heads).await?;
-        let heads = deserialize_change_hashes(&raw_heads)?;
-
-        // we give them back our set of changes after those heads
-        let changes = self.database.get_changes(&heads)?;
-        let serialized_changes = serialize_changes(&changes)?;
-        write_half.write_all(&serialized_changes).await?;
-
-        Ok(())
-    }
-
-    async fn pull_thread(self: Arc<Self>) {
-        loop {
-            if let Err(e) = self.pull().await {
-                if let Some(e) = e.downcast_ref::<std::io::Error>() {
-                    if e.kind() == std::io::ErrorKind::ConnectionRefused {
-                        continue;
-                    }
-                }
-
-                logging::GLOBAL.error(&format!("Error while pulling: {}", e));
-            }
-            thread::sleep(Duration::from_millis(1000));
-        }
-    }
-
-    async fn pull(self: &Arc<Self>) -> anyhow::Result<()> {
-        let stream = TcpStream::connect(self.peer).await?;
-        let (read_half, mut write_half) = stream.into_split();
-
-        let heads = self.database.get_heads();
-        let raw_heads = serialize_change_hashes(&heads[1..])?;
-        write_half.write_all(&raw_heads).await?;
-        write_half.write_all(b"\n").await?;
-
-        let mut reader = BufReader::new(read_half);
-        let mut raw_changes = Vec::new();
-        reader.read_until(b'\n', &mut raw_changes).await?;
-        let changes = deserialize_changes(&raw_changes)?;
-
-        self.database.apply_changes(changes)?;
-
-        self.tx.send(Event::Pull)?;
-
-        Ok(())
     }
 
     fn poll_terminal_thread(self: Arc<Self>) {

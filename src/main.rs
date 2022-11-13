@@ -32,16 +32,12 @@ fn get_database_path() -> anyhow::Result<PathBuf> {
 
 #[tokio::main()]
 async fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = std::env::args().into_iter().collect();
-    let our_port = u16::from_str(&args[1])?;
-    let their_port = u16::from_str(&args[2])?;
-
     let db_path = get_database_path()?;
     let db = Arc::new(match database::Database::load(db_path) {
         Ok(db) => db,
         Err(_) => database::Database::new()?,
     });
-    let controller = controller::Controller::new(db.clone(), our_port, their_port).await?;
+    let controller = controller::Controller::new(db.clone()).await?;
 
     // This lets us re-establish normal terminal function when we panic! Nice!
     {

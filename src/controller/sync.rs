@@ -7,6 +7,7 @@ use hyper::Body;
 use hyper::Response;
 use reqwest::Client;
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use warp::Filter;
 
 use super::deserialize_change_hashes;
@@ -14,16 +15,18 @@ use super::deserialize_changes;
 use super::serialize_change_hashes;
 use super::serialize_changes;
 use super::utils;
+use super::Event;
 use crate::database::Database;
 use crate::logging;
 
 pub struct Sync {
     database: Arc<Database>,
+    tx: mpsc::UnboundedSender<Event>,
 }
 
 impl Sync {
-    pub fn new(database: Arc<Database>) -> Arc<Self> {
-        Arc::new(Self { database })
+    pub fn new(database: Arc<Database>, tx: mpsc::UnboundedSender<Event>) -> Arc<Self> {
+        Arc::new(Self { database, tx })
     }
 
     pub async fn start(self: Arc<Self>) {
@@ -135,6 +138,7 @@ impl Sync {
                 }
             }
 
+            let _ = self.tx.send(Event::Pull);
             tokio::time::sleep(Duration::from_secs(7)).await;
         }
     }
