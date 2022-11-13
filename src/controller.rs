@@ -4,6 +4,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use automerge::Change;
+use automerge::ChangeHash;
+use automerge::ExpandedChange;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
@@ -11,10 +14,6 @@ use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
-
-use automerge::Change;
-use automerge::ChangeHash;
-use automerge::ExpandedChange;
 
 use crate::database::Database;
 use crate::logging;
