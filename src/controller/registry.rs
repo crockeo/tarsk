@@ -27,6 +27,15 @@ impl Default for Registry {
     }
 }
 
+// TODO: try to re-host a registry somehow.
+// either:
+//
+// - continually try to host and then fail silently when the socket is in use
+// - get a signal from the Sync implementation when it can't contact the registry
+//   and then try to start then
+//
+// (1) is simpler but potentially wasteful
+// (2) is more complex but won't try to rehost a registry over and over again
 impl Registry {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
