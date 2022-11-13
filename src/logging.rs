@@ -23,6 +23,18 @@ impl Logger {
         let _ = file.write(format!("{} {}\n", level, line.as_ref()).as_bytes());
     }
 
+    pub fn debug<S: AsRef<str>>(&self, line: S) {
+        self.log("DEBUG", line);
+    }
+
+    pub fn info<S: AsRef<str>>(&self, line: S) {
+        self.log("INFO", line);
+    }
+
+    pub fn warn<S: AsRef<str>>(&self, line: S) {
+        self.log("WARN", line);
+    }
+
     pub fn error<S: AsRef<str>>(&self, line: S) {
         self.log("ERROR", line)
     }

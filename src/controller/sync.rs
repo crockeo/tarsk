@@ -12,6 +12,7 @@ use super::deserialize_change_hashes;
 use super::serialize_changes;
 use super::utils;
 use crate::database::Database;
+use crate::logging;
 
 pub struct Sync {
     database: Arc<Database>,
@@ -50,7 +51,8 @@ impl Sync {
 
         let filters = serve_changes;
 
-        // TODO: how to get our socket address here?
+        let stream = tokio_stream::wrappers::TcpListenerStream::new(listener);
+        warp::serve(filters).run_incoming(stream).await
     }
 
     async fn serve_changes(self: Arc<Self>, raw_change_hashes: Bytes) -> Response<Body> {
@@ -118,15 +120,20 @@ impl Sync {
     }
 
     async fn register(self: Arc<Self>, local_addr: SocketAddr) {
+        let registry_url = format!(
+            "http://{}/api/v1/register",
+            super::REGISTRY_ADDR.to_string()
+        );
         loop {
-            // TODO: implement
-            //
-            // - query registry server at super::REGISTRY_ADDR on
-            //   POST /api/v1/register
-            //
-            // - body = the Bytes of local_addr
-            //
-            // - on failure, just try again later
+            let client = reqwest::Client::new();
+            if let Err(e) = client
+                .post(&registry_url)
+                .body(local_addr.to_string())
+                .send()
+                .await
+            {
+                logging::GLOBAL.error(format!("Failed to register client to registry: {}", e));
+            }
             tokio::time::sleep(Duration::from_secs(9)).await;
         }
     }
