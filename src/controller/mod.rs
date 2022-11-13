@@ -18,6 +18,10 @@ use tokio::sync::Mutex;
 use crate::database::Database;
 use crate::logging;
 
+mod client;
+mod registry;
+mod sync;
+
 pub struct Controller {
     database: Arc<Database>,
 
