@@ -21,6 +21,7 @@ use crate::logging;
 mod client;
 mod registry;
 mod sync;
+mod utils;
 
 pub struct Controller {
     database: Arc<Database>,
