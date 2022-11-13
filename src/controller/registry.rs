@@ -53,7 +53,7 @@ impl Registry {
 
         // TODO: have this return a Result<...> so that i can recover
         // if there's another registry active on the OS
-        warp::serve(filters).run(([127, 0, 0, 1], 8042)).await
+        warp::serve(filters).run(super::REGISTRY_ADDR.clone()).await
     }
 
     async fn register_peer(self: Arc<Self>, raw_socket_addr: Bytes) -> Response<Body> {

@@ -1,4 +1,6 @@
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
+use std::net::SocketAddrV4;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
@@ -7,6 +9,7 @@ use std::time::Duration;
 use automerge::Change;
 use automerge::ChangeHash;
 use automerge::ExpandedChange;
+use lazy_static::lazy_static;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
@@ -22,6 +25,11 @@ mod client;
 mod registry;
 mod sync;
 mod utils;
+
+lazy_static! {
+    static ref REGISTRY_ADDR: SocketAddr =
+        SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8084));
+}
 
 pub struct Controller {
     database: Arc<Database>,
