@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
 use self::registry::Registry;
+use self::sync::Sync;
 use crate::database::Database;
 use crate::logging;
 
@@ -36,6 +37,7 @@ pub struct Controller {
     database: Arc<Database>,
 
     registry: Arc<Registry>,
+    sync: Arc<Sync>,
 
     listener: TcpListener,
     peer: SocketAddr,
@@ -55,8 +57,9 @@ impl Controller {
 
         let (tx, rx) = mpsc::unbounded_channel();
         let server = Arc::new(Self {
-            database,
+            database: database.clone(),
             registry: Registry::new(),
+            sync: Sync::new(database.clone()),
             listener,
             peer,
             tx,
@@ -66,6 +69,11 @@ impl Controller {
         {
             let registry = server.registry.clone();
             tokio::spawn(registry.start());
+        }
+
+        {
+            let sync = server.sync.clone();
+            tokio::spawn(sync.start());
         }
 
         {
