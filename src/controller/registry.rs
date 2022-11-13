@@ -59,13 +59,20 @@ impl Registry {
     async fn register_peer(self: Arc<Self>, raw_socket_addr: Bytes) -> Response<Body> {
         let raw_socket_addr = match std::str::from_utf8(&raw_socket_addr) {
             Err(_) => {
-                let body = Body::from("hello world");
-                return Response::new(body);
+                return Response::builder()
+                    .status(400)
+                    .body(Body::from("Provided socket addr is not valid utf8"))
+                    .unwrap();
             }
             Ok(raw_socket_addr) => raw_socket_addr,
         };
         let socket_addr = match SocketAddr::from_str(raw_socket_addr) {
-            Err(_) => todo!(),
+            Err(_) => {
+                return Response::builder()
+                    .status(400)
+                    .body(Body::from(format!("Invalid socket `{}`", raw_socket_addr)))
+                    .unwrap();
+            }
             Ok(socket_addr) => socket_addr,
         };
 
@@ -77,22 +84,21 @@ impl Registry {
             }
         }
 
-        let body = Body::default();
-        Response::new(body)
+        Response::builder()
+            .status(200)
+            .body(Body::from(raw_socket_addr.to_string()))
+            .unwrap()
     }
 
     async fn get_peers(self: Arc<Self>) -> Response<Body> {
         let peers = self.peers.read().await;
-        let rendered_peers = match serde_json::to_string(&*peers) {
-            Err(_) => todo!(),
-            Ok(rendered_peers) => rendered_peers,
-        };
+        let rendered_peers = serde_json::to_string(&*peers)
+            .expect("Failed to render SocketAddrs. This should not happen.");
 
-        let (mut stream, body) = Body::channel();
-        if let Err(_) = stream.send_data(Bytes::from(rendered_peers)).await {
-            todo!()
-        }
-        Response::new(body)
+        Response::builder()
+            .status(200)
+            .body(Body::from(rendered_peers))
+            .unwrap()
     }
 }
 
