@@ -102,7 +102,6 @@ impl Controller {
     async fn pull_thread(self: Arc<Self>) {
         loop {
             if let Err(e) = self.pull().await {
-                // TODO: make this less ugly whenever this feature becomes stable?
                 if let Some(e) = e.downcast_ref::<std::io::Error>() {
                     if e.kind() == std::io::ErrorKind::ConnectionRefused {
                         continue;

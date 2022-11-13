@@ -1,4 +1,3 @@
-// TODO: implement logging!
 use std::env::args;
 use std::fs::File;
 use std::io::Write;

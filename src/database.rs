@@ -1,3 +1,4 @@
+use std::fs::create_dir_all;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
@@ -36,9 +37,12 @@ impl Database {
         Self::from_bytes(&contents)
     }
 
-    // TODO: if the file path's parent directory doesn't exist
-    // it won't create the parent directory :(
     pub fn save<P: AsRef<Path>>(&self, path: &Path) -> anyhow::Result<()> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow!("File doesn't have a parent."))?;
+        create_dir_all(parent)?;
+
         let mut file = File::create(path)?;
         file.write_all(&self.to_bytes())?;
         Ok(())
@@ -62,7 +66,6 @@ impl Database {
     }
 
     pub fn get_changes(&self, heads: &[ChangeHash]) -> anyhow::Result<Vec<Change>> {
-        // TODO: see if there's a good way to do this without cloning everything?
         let mut doc = self.doc.lock().unwrap();
         let changes = doc
             .get_changes(heads)?
