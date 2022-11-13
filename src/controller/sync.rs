@@ -140,7 +140,7 @@ impl Sync {
             }
 
             let _ = self.tx.send(Event::Pull);
-            tokio::time::sleep(Duration::from_secs(7)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -187,7 +187,7 @@ impl Sync {
             {
                 logging::GLOBAL.error(format!("Failed to register client to registry: {}", e));
             }
-            tokio::time::sleep(Duration::from_secs(9)).await;
+            tokio::time::sleep(Duration::from_secs(5)).await;
         }
     }
 }
