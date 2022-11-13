@@ -18,6 +18,7 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex;
 
+use self::registry::Registry;
 use crate::database::Database;
 use crate::logging;
 
@@ -33,6 +34,8 @@ lazy_static! {
 
 pub struct Controller {
     database: Arc<Database>,
+
+    registry: Arc<Registry>,
 
     listener: TcpListener,
     peer: SocketAddr,
@@ -53,11 +56,17 @@ impl Controller {
         let (tx, rx) = mpsc::unbounded_channel();
         let server = Arc::new(Self {
             database,
+            registry: Registry::new(),
             listener,
             peer,
             tx,
             rx: Mutex::new(rx),
         });
+
+        {
+            let registry = server.registry.clone();
+            tokio::spawn(registry.start());
+        }
 
         {
             let server = server.clone();

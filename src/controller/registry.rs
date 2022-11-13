@@ -32,7 +32,7 @@ impl Registry {
         Arc::new(Self::default())
     }
 
-    pub async fn start(self: &Arc<Self>) {
+    pub async fn start(self: Arc<Self>) {
         let register_peer = warp::any()
             .and(utils::as_context(&self.clone()))
             .and(warp::path("register"))
