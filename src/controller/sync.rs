@@ -1,8 +1,11 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use hyper::body::Bytes;
 use hyper::Body;
 use hyper::Response;
+use tokio::net::TcpListener;
 use warp::Filter;
 
 use super::deserialize_change_hashes;
@@ -20,14 +23,22 @@ impl Sync {
     }
 
     pub async fn start(self: Arc<Self>) {
+        let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .expect("Failed to bind a TCP socket? This shouldn't happen.");
+
+        let local_addr = listener
+            .local_addr()
+            .expect("Failed to get TCP socket address. This shouldn't happen.");
+
         {
             let sync = self.clone();
-            tokio::spawn(sync.query_changes());
+            tokio::spawn(sync.query_changes(local_addr.clone()));
         }
 
         {
             let sync = self.clone();
-            tokio::spawn(sync.register());
+            tokio::spawn(sync.register(local_addr.clone()));
         }
 
         let serve_changes = warp::any()
@@ -86,11 +97,37 @@ impl Sync {
         Response::builder().status(200).body(body).unwrap()
     }
 
-    async fn query_changes(self: Arc<Self>) {
-        todo!()
+    async fn query_changes(self: Arc<Self>, local_addr: SocketAddr) {
+        loop {
+            // TODO: implement
+            //
+            // v0 implementation will be naive
+            // and just query registry every time
+            // it needs to find its peers
+            //
+            // - query registry server at super::REGISTRY_ADDR on
+            //   GET /api/v1/peers
+            //
+            // - iterate through Vec<SocketAddr> that gets returned
+            //   for each:
+            //   - if it's eq. to local_addr, then just skip
+            //   - otherwise make a request to that addr on
+            //     GET /api/v1/changes
+            tokio::time::sleep(Duration::from_secs(7)).await;
+        }
     }
 
-    async fn register(self: Arc<Self>) {
-        todo!()
+    async fn register(self: Arc<Self>, local_addr: SocketAddr) {
+        loop {
+            // TODO: implement
+            //
+            // - query registry server at super::REGISTRY_ADDR on
+            //   POST /api/v1/register
+            //
+            // - body = the Bytes of local_addr
+            //
+            // - on failure, just try again later
+            tokio::time::sleep(Duration::from_secs(9)).await;
+        }
     }
 }
