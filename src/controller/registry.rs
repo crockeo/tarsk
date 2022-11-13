@@ -86,7 +86,6 @@ impl Registry {
         };
 
         {
-            // TODO: do we need to care about deduplication?
             let mut peers = self.peers.write().await;
             if !peers.contains(&socket_addr) {
                 peers.push(socket_addr);
