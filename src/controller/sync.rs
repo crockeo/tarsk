@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::bail;
 use hyper::body::Bytes;
 use hyper::Body;
 use hyper::Response;
@@ -51,11 +52,11 @@ impl Sync {
         let serve_changes = warp::any()
             .and(utils::as_context(&self.clone()))
             .and(warp::path("changes"))
-            .and(warp::get())
+            .and(warp::post())
             .and(warp::body::bytes())
             .then(Self::serve_changes);
 
-        let filters = serve_changes;
+        let filters = warp::path("api").and(warp::path("v1")).and(serve_changes);
 
         let stream = tokio_stream::wrappers::TcpListenerStream::new(listener);
         warp::serve(filters).run_incoming(stream).await
@@ -157,6 +158,14 @@ impl Sync {
             .body(raw_change_hashes)
             .send()
             .await?;
+
+        if res.status() != 200 {
+            bail!(
+                "Non-200 response from peer ({}): `{}`",
+                res.status(),
+                res.text().await?
+            );
+        }
 
         let raw_changes = res.bytes().await?;
         let changes = deserialize_changes(&raw_changes)?;
