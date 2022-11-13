@@ -5,10 +5,13 @@ use std::time::Duration;
 use hyper::body::Bytes;
 use hyper::Body;
 use hyper::Response;
+use reqwest::Client;
 use tokio::net::TcpListener;
 use warp::Filter;
 
 use super::deserialize_change_hashes;
+use super::deserialize_changes;
+use super::serialize_change_hashes;
 use super::serialize_changes;
 use super::utils;
 use crate::database::Database;
@@ -100,23 +103,60 @@ impl Sync {
     }
 
     async fn query_changes(self: Arc<Self>, local_addr: SocketAddr) {
+        let peers_url = format!("http://{}/api/v1/peers", super::REGISTRY_ADDR.to_string(),);
+        let client = reqwest::Client::new();
         loop {
-            // TODO: implement
-            //
-            // v0 implementation will be naive
-            // and just query registry every time
-            // it needs to find its peers
-            //
-            // - query registry server at super::REGISTRY_ADDR on
-            //   GET /api/v1/peers
-            //
-            // - iterate through Vec<SocketAddr> that gets returned
-            //   for each:
-            //   - if it's eq. to local_addr, then just skip
-            //   - otherwise make a request to that addr on
-            //     GET /api/v1/changes
+            let raw_peers = match client.get(&peers_url).send().await {
+                Err(e) => {
+                    logging::GLOBAL.error(format!("Failed to get peers from registry: {}", e));
+                    continue;
+                }
+                Ok(raw_peers) => raw_peers,
+            };
+
+            // TODO: maybe handle this better?
+            let raw_peers = raw_peers.bytes().await.expect("Can't get bytes?");
+            let peers: Vec<SocketAddr> = match serde_json::from_slice(&raw_peers) {
+                Err(e) => {
+                    logging::GLOBAL.error(format!("Failed to parse peers : {}", e));
+                    continue;
+                }
+                Ok(peers) => peers,
+            };
+
+            for peer in peers.into_iter() {
+                if peer == local_addr {
+                    continue;
+                }
+
+                if let Err(e) = self.query_changes_from_peer(&client, peer).await {
+                    logging::GLOBAL.error(format!("Failed to sync with peer {}: {}", peer, e));
+                    continue;
+                }
+            }
+
             tokio::time::sleep(Duration::from_secs(7)).await;
         }
+    }
+
+    async fn query_changes_from_peer(
+        self: &Arc<Self>,
+        client: &Client,
+        peer: SocketAddr,
+    ) -> anyhow::Result<()> {
+        let change_hashes = self.database.get_heads();
+        let raw_change_hashes = serialize_change_hashes(&change_hashes)?;
+
+        let changes_url = format!("http://{}/api/v1/changes", peer,);
+        let res = client
+            .post(changes_url)
+            .body(raw_change_hashes)
+            .send()
+            .await?;
+
+        let raw_changes = res.bytes().await?;
+        let changes = deserialize_changes(&raw_changes)?;
+        self.database.apply_changes(changes)
     }
 
     async fn register(self: Arc<Self>, local_addr: SocketAddr) {
@@ -124,8 +164,8 @@ impl Sync {
             "http://{}/api/v1/register",
             super::REGISTRY_ADDR.to_string()
         );
+        let client = reqwest::Client::new();
         loop {
-            let client = reqwest::Client::new();
             if let Err(e) = client
                 .post(&registry_url)
                 .body(local_addr.to_string())
