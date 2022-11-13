@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::NaiveDateTime;
 use hyper::body::Bytes;
 use hyper::Body;
 use hyper::Response;
@@ -58,10 +57,27 @@ impl Registry {
     }
 
     async fn register_peer(self: Arc<Self>, raw_socket_addr: Bytes) -> Response<Body> {
-        let (mut stream, body) = Body::channel();
-        if let Err(_) = stream.send_data(raw_socket_addr).await {
-            todo!()
+        let raw_socket_addr = match std::str::from_utf8(&raw_socket_addr) {
+            Err(_) => {
+                let body = Body::from("hello world");
+                return Response::new(body);
+            }
+            Ok(raw_socket_addr) => raw_socket_addr,
+        };
+        let socket_addr = match SocketAddr::from_str(raw_socket_addr) {
+            Err(_) => todo!(),
+            Ok(socket_addr) => socket_addr,
+        };
+
+        {
+            // TODO: do we need to care about deduplication?
+            let mut peers = self.peers.write().await;
+            if !peers.contains(&socket_addr) {
+                peers.push(socket_addr);
+            }
         }
+
+        let body = Body::default();
         Response::new(body)
     }
 
