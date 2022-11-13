@@ -23,7 +23,6 @@ use self::sync::Sync;
 use crate::database::Database;
 use crate::logging;
 
-mod client;
 mod registry;
 mod sync;
 mod utils;
