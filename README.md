@@ -123,9 +123,8 @@ flowchart
         app_ios <--> daemon
         app_macos <--> daemon
         app_android <--> daemon
-    end```
-
-TODO: little architecture diagram :)
+    end
+```
 
 ## License
 
