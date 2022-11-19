@@ -54,7 +54,76 @@ This project aims to be a response to this conundrum by:
   both to live edits and to offline changes
   which are synchronized much more infrequently.
 
-## What?
+## Vision
+
+- A central Rust library, which provides:
+  - A CRDT-based central database (through automerge-rs).
+  - A core representation of task data structures.
+  - Morphisms on tasks which get committed to the central database.
+  - Core networking features:
+    - Peer discovery through a discovery daemon.
+    - Synchronization over the network with peers.
+- A discovery server:
+  - Which binds to a well known port.
+  - Accepts requests to register an IP address as a peer.
+    - For local instances: instances of tarsk will attempt to register with this server.
+    - For remote instances: share sets of peers with remote hosts.
+    - _TODO:_ what about proxying sync requests to the discovery server
+      so that you don't have to open a bunch of random ports?
+  - Scans local networks for peers to connect to.
+- A C library which:
+  - Exposes a _start_-ish method to kick off the sync server.
+  - Exposes an interface to perform morphisms on tasks.
+  - Exposes an interface to query the state of tasks.
+- FFI bindings:
+  - To Swift for Apple ecosystem.
+  - To Java for Android ecosystem.
+- UI applications:
+  - From Rust library:
+    - Linux app
+    - Windows app
+  - From Swift bindings:
+    - iOS app
+    - macOS app
+  - From Java bindings:
+    - Android app
+
+```mermaid
+flowchart
+    tarsk <--> peer
+    peer((Peer Applications))
+
+    subgraph Rust Library
+        db[(Task DB)]
+
+        tarsk(tarsk)
+
+        db <--> tarsk
+    end
+
+    subgraph FFI
+        tarsk --> libtarsk(libtarsk)
+        libtarsk --> bindings_swift(Swift Bindings)
+        libtarsk --> bindings_java(Java Bindings)
+    end
+
+    subgraph Applications
+        tarsk --> daemon(Discovery Damon)
+
+        tarsk --> app_linux(Linux App)
+        tarsk --> app_windows(Windows App)
+
+        bindings_swift --> app_ios(iOS App)
+        bindings_swift --> app_macos(macOS App)
+
+        bindings_java --> app_android(Android App)
+
+        app_linux <--> daemon
+        app_windows <--> daemon
+        app_ios <--> daemon
+        app_macos <--> daemon
+        app_android <--> daemon
+    end```
 
 TODO: little architecture diagram :)
 
