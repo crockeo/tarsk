@@ -90,8 +90,6 @@ This project aims to be a response to this conundrum by:
 
 ```mermaid
 flowchart
-    tarsk <--> peer
-
     subgraph Rust Library
         db[(Task DB)]
 
