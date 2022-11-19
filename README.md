@@ -91,7 +91,6 @@ This project aims to be a response to this conundrum by:
 ```mermaid
 flowchart
     tarsk <--> peer
-    peer((Peer Applications))
 
     subgraph Rust Library
         db[(Task DB)]
@@ -108,7 +107,7 @@ flowchart
     end
 
     subgraph Applications
-        tarsk --> daemon(Discovery Damon)
+        tarsk <--> daemon(Discovery Damon)
 
         tarsk --> app_linux(Linux App)
         tarsk --> app_windows(Windows App)
@@ -117,12 +116,6 @@ flowchart
         bindings_swift --> app_macos(macOS App)
 
         bindings_java --> app_android(Android App)
-
-        app_linux <--> daemon
-        app_windows <--> daemon
-        app_ios <--> daemon
-        app_macos <--> daemon
-        app_android <--> daemon
     end
 ```
 
